@@ -17,7 +17,7 @@ class MovieLens25MDataLoader(RecsDataLoader):
     MovieLens 25M DataLoader:
     """
 
-    def __init__(self, full_config: dict, sample_fraction: float = 0.1):
+    def __init__(self, full_config: dict, sample_fraction: float = 1):
         # 1. Copy config to avoid side effects
         self.config_copy = copy.deepcopy(full_config)
         
