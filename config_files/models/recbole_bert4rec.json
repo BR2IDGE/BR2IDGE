@@ -1,0 +1,39 @@
+{
+  "model": {
+    "model_type": "Bert4REC",
+    "model_name": "Bert4REC",
+    "parameters": {
+      "max_seq_len": 50,
+      "epochs": 1,
+      "train_batch_size": 16,
+      "eval_batch_size": 16,
+      "learning_rate": 0.001,
+      "hidden_size": 32,
+      "inner_size": 32,
+      "n_layers": 2,
+      "n_heads": 2,
+      "hidden_dropout_prob": 0.2,
+      "attn_dropout_prob": 0.2,
+      "mask_ratio": 0.2,
+      "seed": 42
+    }
+  },
+    "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": [
+      "NDCG",
+      "MAP",
+      "MRR",
+      "PRECISION",
+      "RECALL"
+    ],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}

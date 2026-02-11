@@ -1,0 +1,19 @@
+{
+  "dataloader": {
+    "dataset_name": "amazonElectronics",
+    "path": "amazonElectronics", 
+    "test_size": 0.15,
+    "val_size": 0.15,
+    "seed": 42,
+    "mode": "hybrid",
+    "head_train": null,
+    "head_val": null,
+    "head_test": null
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

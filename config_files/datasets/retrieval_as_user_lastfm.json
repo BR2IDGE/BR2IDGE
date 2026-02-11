@@ -1,0 +1,31 @@
+{
+  "dataloader": {
+    "dataset_name": "retrieval_as_user",
+    "mode": "tag_query",
+    "path": "lastfm360k",
+    "top_k": 100,
+    "seed": 42,
+    "query_limit": 500,
+    "min_relevance": 0.8,
+    "max_tags_per_doc": 20,
+    "min_tag_interactions": 20,
+    "item_text_col": "artist_name",
+    "base_loader": {
+      "class_path": "search_recs.recs.dataloader.lastfm.LastFM360KDataLoader",
+      "config": {
+        "dataloader": {
+          "path": "lastfm360k",
+          "generate_pseudo_timestamps": true,
+          "pseudo_time_order": "by_plays_desc"
+        }
+      }
+    },
+    "bm25_config": {
+      "index_name": "bm25_index_lastfm_rau",
+      "model": "bm25",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "hyperparams": { "b": 0.75, "k1": 1.5 }
+    }
+  }
+}

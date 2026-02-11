@@ -1,0 +1,17 @@
+{
+  "model": {
+    "model_name": "BM25Model",
+    "name": "BM25Model",
+    "parameters": {
+      "index_name": "bm25_index",
+      "model": "bm25",
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "hyperparams": { "b": 0.75, "k1": 1.5 },
+
+      "dataset_path": "./data/ml-25m",
+      "tagfusion_min_relevance": 0.9
+    }
+  }
+}

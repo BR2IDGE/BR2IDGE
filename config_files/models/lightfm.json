@@ -1,0 +1,32 @@
+{
+    "model": {
+      "model_type": "LightFMModel",
+      "model_name": "lightfm_bpr",
+      "parameters": {
+        "loss": "bpr",
+        "learning_rate": 0.05,
+        "epochs": 20,
+        "seed": 42,
+        "embedding_dim": 16
+      }
+    },
+    "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": [
+      "NDCG",
+      "MAP",
+      "MRR",
+      "PRECISION",
+      "RECALL"
+    ],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}
+  

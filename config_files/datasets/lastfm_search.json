@@ -1,0 +1,17 @@
+{
+  "dataloader": {
+    "dataset_name": "lastfm",
+    "path": "data/lastfm-hybrid",
+    "test_size": 0.15,
+    "val_size": 0.15,
+    "random_state": 42,
+    "min_tag_freq": 5,
+    "top_k_tags": 10
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

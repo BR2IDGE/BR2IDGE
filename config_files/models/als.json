@@ -1,0 +1,33 @@
+{
+  "model": {
+    "model_type": "ALSModel",
+    "model_name": "ALS_explicit_movielens",
+    "parameters": {
+      "n_factors": 64,
+      "n_iterations": 20,
+      "lambda_": 0.1,
+      "early_stopping_patience": 5,
+      "use_biases": true,
+      "seed": 42,
+
+      "user_col": "user",
+      "item_col": "item",
+      "rating_col": "label"
+    }
+  },
+
+  "features": {},
+
+  "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": ["NDCG", "MAP", "MRR", "PRECISION", "RECALL"],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}

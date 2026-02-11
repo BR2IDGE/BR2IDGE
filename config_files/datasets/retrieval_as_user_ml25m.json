@@ -1,0 +1,25 @@
+{
+  "dataloader": {
+    "dataset_name": "retrieval_as_user",
+    "mode": "movielens_genome",
+    "path": "./data/ml-25m",
+
+    "top_k": 100,
+    "seed": 42,
+
+    "min_relevance": 0.80,
+    "query_limit": 10000,
+
+    "flush_every": 250000,
+    "progress_every": 200,
+
+    "bm25_config": {
+      "index_name": "bm25_index_ml25m_rau",
+      "model": "bm25",
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "hyperparams": { "b": 0.75, "k1": 1.5 }
+    }
+  }
+}

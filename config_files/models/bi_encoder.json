@@ -1,0 +1,15 @@
+{
+    "model": {
+      "model_name": "BiEncoderSearchModel",
+      "name": "BiEncoderSearchModel",
+      "parameters": {
+        "pretrained_name": "all-MiniLM-L6-v2",
+        "token_max_length": 128,
+        "batch_size": 96,
+        "learning_rate": 1e-7,
+        "epochs": 3,
+        "annoy_n_trees": 10,
+        "model_dir": "./output/bi_encoder"
+      }
+    }
+  }

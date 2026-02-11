@@ -1,0 +1,16 @@
+{
+  "dataloader": {
+    "dataset_name": "amazonElectronics",
+    "path": "amazonElectronics"
+  },
+  "features": {
+    "sparse_features": [
+      "user",
+      "item"
+    ],
+    "dense_features": [
+      "label",
+      "time"
+    ]
+  }
+}

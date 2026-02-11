@@ -1,0 +1,38 @@
+{
+  "experiment_name": "Benchmark_MatrixFactorization_vs_Hybrid",
+  "task_type": "recs",
+  "output_dir": "artifacts",
+
+  "dataset": {
+    "name": "MovieLens"
+  },
+
+  "model":[ 
+    {
+      "name": "LightFMModel"
+    },
+    {
+      "name": "DeepFMModel"
+    }
+  ],
+
+  "execution": {
+    "skip": [],
+    "force": [],
+    "no_save": [],
+    "n_runs": 3,
+    "window_size": 0.05
+  },
+  
+  "evaluation": {
+    "n_pos_samples": 20,  
+    "n_neg_samples": 200,
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "PRECISION", "MAP", "MRR"],
+    "stats": {
+      "tests": [],
+      "alpha": 0.05,
+      "symbol": "▲"
+    }
+  }
+}

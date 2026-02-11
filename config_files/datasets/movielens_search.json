@@ -1,0 +1,19 @@
+{
+  "dataloader": {
+    "dataset_name": "movielens",
+    "path": "./data/ml-25m",
+    "mode": "normal",
+    "test_size": 0.2,
+    "val_size": 0.1,
+    "head_train": 5000,
+    "head_val": 300,
+    "head_test": 1000,
+    "seed": 45
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "experiment_name": "BM25",
+  "task_type": "search",
+  "output_dir": "artifacts",
+  "dataset": { 
+    "name": "movielens"
+  },
+  "model": [
+    { 
+      "name": "BM25Model" 
+    },
+    {
+      "name": "BiEncoderSearchModel"
+    }
+  ],
+  "execution": {
+    "force": ["preprocess", "index", "train"],
+    "skip": [],
+    "no_save": [],
+    "n_runs": 1
+  },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "MAP", "PRECISION"]
+  }
+}

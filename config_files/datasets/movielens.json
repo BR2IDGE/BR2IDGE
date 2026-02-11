@@ -1,0 +1,21 @@
+{
+  "dataloader": {
+    "dataset_name": "Movielens",
+    "path": "ml-25m"
+  },
+  "features": {
+    "sparse_features": [
+      "userId",
+      "movieId",
+      "tag",
+      "tagId",
+      "title"
+    ],
+    "dense_features": [
+      "rating",
+      "timestamp",
+      "genres",
+      "relevance"
+    ]
+  }
+}

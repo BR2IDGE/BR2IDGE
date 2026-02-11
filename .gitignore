@@ -1,0 +1,66 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+
+# Distribution / packaging
+*.egg-info/
+
+tests/data/ml-1m
+
+*data/df_bert4rec
+
+# Model logs and checkpoints
+*checkpoint*/*
+*logs/
+*/dsi-checkpoints/
+*/dsi_trained_model/
+
+*artifacts/
+*experimental_results/
+
+# Synthetic datasets
+*synthetic*.json
+
+# vscode files
+.vscode/
+
+*.dat
+
+README
+
+/data
+
+*.csv
+
+*.txt
+
+README
+
+*.rar
+
+*.pt
+
+*.pth
+
+*.bin
+
+*.model
+
+*.safetensors
+/e5-finetunning-movielens-genome-new-data-sampling
+/notebooks/test-template/output
+notebooks/finetuning_bi-encoders/movielens_25m_index.ann
+/output
+Miniconda3-latest-Linux-x86_64.sh
+Miniconda3-latest-Linux-x86_64.sh.1
+
+*recbole_data_temp/
+
+*rebole_temp/
+
+*saved/
+
+*.inter

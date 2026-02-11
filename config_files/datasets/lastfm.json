@@ -1,0 +1,21 @@
+{
+  "dataloader": {
+    "dataset_name": "LastFM",
+    "path": "lastfm360k",
+    "generate_pseudo_timestamps": true,
+    "pseudo_time_order": "by_plays_asc"
+  },
+  "features": {
+    "sparse_features": [
+      "user_id",
+      "artist_id",
+      "gender",
+      "country"
+    ],
+    "dense_features": [
+      "age",
+      "playcount",
+      "timestamp"
+    ]
+  }
+}

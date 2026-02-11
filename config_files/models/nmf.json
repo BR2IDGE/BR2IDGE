@@ -1,0 +1,30 @@
+{
+  "model": {
+    "model_type": "NMFRecommender",
+    "model_name": "nmf_cf",
+    "parameters": {
+      "n_components": 64,
+      "init": "nndsvda",
+      "solver": "cd",
+      "beta_loss": "frobenius",
+      "max_iter": 200,
+      "tol": 1e-4,
+      "n_runs": 3,
+      "normalize_ratings": true,
+      "random_state": 42,
+      "test_frac": 0.2
+    }
+  },
+  "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": ["NDCG", "MAP", "MRR", "PRECISION", "RECALL"],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "model": {
+    "model_type": "DeepFMModel",
+    "model_name": "DeepFM",
+    "parameters": {
+      "n_epochs": 1,
+      "lr": 0.01,
+      "reg": 0.001,
+      "n_neg": 1,
+      "embed_size": 16
+    }
+  },
+    "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": [
+      "NDCG",
+      "MAP",
+      "MRR",
+      "PRECISION",
+      "RECALL"
+    ],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}

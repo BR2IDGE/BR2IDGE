@@ -1,0 +1,32 @@
+{
+  "model": {
+    "model_type": "DeepCTRModel",
+    "model_name": "DeepFM",
+    "parameters": {
+      "embedding_dim": 16,
+      "dnn_hidden_units": [128, 128],
+      "dnn_dropout": 0.5,
+      "l2_reg_embedding": 1e-5,
+      "l2_reg_dnn": 0.0,
+      "task": "regression"
+    }
+  },
+    "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": [
+      "NDCG",
+      "MAP",
+      "MRR",
+      "PRECISION",
+      "RECALL"
+    ],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}
