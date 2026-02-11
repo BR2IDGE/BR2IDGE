@@ -13,7 +13,6 @@ tests/data/ml-1m
 *data/df_bert4rec
 
 # Model logs and checkpoints
-*checkpoint*/*
 *logs/
 */dsi-checkpoints/
 */dsi_trained_model/
