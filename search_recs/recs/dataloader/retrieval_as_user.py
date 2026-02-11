@@ -321,6 +321,70 @@ def _make_bm25_model(bm25_config: Dict[str, Any], dataset_path: Optional[Path] =
     return SearchBM25Model({"model": model_name, "parameters": cfg})
 
 
+def _download_movielens_25m_if_needed(dataset_dir: Path) -> Path:
+    import os
+    import zipfile
+
+    MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
+    ZIP_FILENAME = "ml-25m.zip"
+    EXTRACTED_FOLDER = "ml-25m"
+
+    base = Path(dataset_dir)
+
+    if base.name != EXTRACTED_FOLDER and (base / EXTRACTED_FOLDER).exists():
+        base = base / EXTRACTED_FOLDER
+
+    if base.name != EXTRACTED_FOLDER and base.exists():
+        cand = base / EXTRACTED_FOLDER
+        if cand != base:
+            base = cand
+
+    base.mkdir(parents=True, exist_ok=True)
+
+    def _has_required(p: Path) -> bool:
+        return (p / "genome-tags.csv").exists() and (p / "genome-scores.csv").exists() and (p / "movies.csv").exists()
+
+    if _has_required(base):
+        return base
+
+    nested = base / EXTRACTED_FOLDER
+    if _has_required(nested):
+        return nested
+
+    zip_path = base.parent / ZIP_FILENAME
+    if not zip_path.exists():
+        print(f"[RetrievalAsUser][MovieLens] Downloading ML-25M -> {zip_path}")
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(MOVIELENS_25M_URL, zip_path)
+        except Exception as e:
+            raise RuntimeError(f"[RetrievalAsUser][MovieLens] Failed to download ml-25m.zip: {e}")
+
+    print(f"[RetrievalAsUser][MovieLens] Extracting -> {base.parent}")
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(base.parent)
+    except Exception as e:
+        raise RuntimeError(f"[RetrievalAsUser][MovieLens] Failed to extract ml-25m.zip: {e}")
+
+    try:
+        os.remove(zip_path)
+    except Exception:
+        pass
+
+    std = base.parent / EXTRACTED_FOLDER
+    if _has_required(std):
+        return std
+
+    std_nested = std / EXTRACTED_FOLDER
+    if _has_required(std_nested):
+        return std_nested
+
+    raise FileNotFoundError(
+        f"[RetrievalAsUser][MovieLens] Download/extract completed but required files were not found under {std}."
+    )
+
+
 def _load_movielens_search_dataset(
     dataset_path: Path,
     min_relevance: float,
@@ -330,6 +394,9 @@ def _load_movielens_search_dataset(
     max_tags_per_doc: int = 30,
 ) -> pd.DataFrame:
     base = Path(dataset_path)
+
+    base = _download_movielens_25m_if_needed(base)
+
     tags = pd.read_csv(base / "genome-tags.csv")
     scores = pd.read_csv(base / "genome-scores.csv")
     movies = pd.read_csv(base / "movies.csv")
