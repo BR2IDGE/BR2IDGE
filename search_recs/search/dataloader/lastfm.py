@@ -285,7 +285,7 @@ def load_lastfm_dataset(cfg: BuildConfig, **kwargs):
       - dataset_path: path to the data directory
       - other params specific to each loader (train_ratio, top_k_tags, etc.)
     """
-    mode = kwargs.get("mode", "hybrid")
+    mode = kwargs.get("mode", "normal")
     dataset_path = kwargs.get("dataset_path", "./data/lastfm-hybrid")
 
     if mode == "hybrid":

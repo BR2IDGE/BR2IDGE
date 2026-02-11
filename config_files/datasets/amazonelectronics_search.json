@@ -1,11 +1,11 @@
 {
   "dataloader": {
-    "dataset_name": "amazonElectronics",
+    "dataset_name": "amazonelectronics",
     "path": "amazonElectronics", 
     "test_size": 0.15,
     "val_size": 0.15,
     "seed": 42,
-    "mode": "hybrid",
+    "mode": "normal",
     "head_train": null,
     "head_val": null,
     "head_test": null

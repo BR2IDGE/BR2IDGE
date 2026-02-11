@@ -11,7 +11,7 @@ REGISTRY = {
     "movielens": load_movielens_dataset,
     "lastfm": load_lastfm_dataset,  
     "generic_csv": load_generic_csv_dataset,
-    "amazoneletronics": load_amazon_search_dataset
+    "amazonelectronics": load_amazon_search_dataset
 }
 
 def get_loader(name: str):
