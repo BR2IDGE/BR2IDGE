@@ -1,11 +1,11 @@
 
-# BRIDGE
+# BR2IDGE
 
 ## Introduction
 
-**BRIDGE** is a **config-driven benchmarking framework** that unifies **Information Retrieval (Search)** and **Recommender Systems (Recs)** under a single, consistent pipeline.
+**BR2IDGE** is a **config-driven benchmarking framework** that unifies **Information Retrieval (Search)** and **Recommender Systems (Recs)** under a single, consistent pipeline.
 
-Designed for reproducibility and extensibility, BRIDGE allows researchers to execute Search and Recommendation experiments using a single runner. It features a plug-in architecture to easily integrate  **new datasets** ,  **models** , and  **ranking metrics** .
+Designed for reproducibility and extensibility, BR2IDGE allows researchers to execute Search and Recommendation experiments using a single runner. It features a plug-in architecture to easily integrate  **new datasets** ,  **models** , and  **ranking metrics** .
 
 Key features include:
 
@@ -41,7 +41,7 @@ pip install -r requirements.txt
 
 ## Configs
 
-BRIDGE is driven by a hierarchical configuration system. You run experiments by passing a **General Experiment Config** (JSON) to the CLI, which resolves specific **Dataset** and **Model** configurations.
+BR2IDGE is driven by a hierarchical configuration system. You run experiments by passing a **General Experiment Config** (JSON) to the CLI, which resolves specific **Dataset** and **Model** configurations.
 
 ### 1. General Experiment Config
 
@@ -108,7 +108,7 @@ The pipeline consists of five stages: `preprocess` → `features` → `train` �
 
 ### 4. Hybrid (Bridging) Mode in Recs
 
-BRIDGE also supports **hybrid recommender executions** using bridging strategies.
+BR2IDGE also supports **hybrid recommender executions** using bridging strategies.
 To enable this, add the following fields **right below** `task_type` in your experiment config:
 
 * **`hybrid`**: `true` or `false` (default is `false` if omitted).
