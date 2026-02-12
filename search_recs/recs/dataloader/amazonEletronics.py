@@ -61,29 +61,28 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
 
     # MODE 1: Ratings
     def load_data(self) -> pd.DataFrame:
-        """Standard User-Item-Rating loading."""
+        """Standard User-Item-Rating loading (Enforcing User-Item order)."""
         csv_path = self.dataset_path / CSV_FILENAME
 
         if not csv_path.exists() and self.auto_download:
             self._download_file(RATINGS_URL, csv_path)
 
-        df = pl.read_csv(
-            csv_path,
-            has_header=False,
-            separator=",",
-            truncate_ragged_lines=True,
-            new_columns=["item", "user", "label", "time"],
-            schema_overrides={
-                "item": pl.Utf8,      
-                "user": pl.Utf8,      
-                "label": pl.Float32,  
-                "time": pl.Int64,     
-            },
-            infer_schema_length=10000,
-        )
-
-        if df.width != 4:
-            # Robust parse for irregular separators
+        try:
+            df = pl.read_csv(
+                csv_path,
+                has_header=False,
+                separator=",",
+                truncate_ragged_lines=True,
+                new_columns=["item", "user", "label", "time"], 
+                schema_overrides={
+                    "item": pl.String,      
+                    "user": pl.String,      
+                    "label": pl.Float32,  
+                    "time": pl.Int64,     
+                },
+                infer_schema_length=10000,
+            )
+        except Exception:
             df = pl.read_csv(csv_path, has_header=False, separator="\0", quote_char=None, new_columns=["raw_line"])
             df = df.select(pl.col("raw_line").str.extract_all(r"[^,\s]+").alias("parts"))
             df = df.filter(pl.col("parts").list.len() >= 4).select([
@@ -92,29 +91,33 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
                 pl.col("parts").list.get(2).alias("label"),
                 pl.col("parts").list.get(3).alias("time"),
             ])
-        else:
-            df.columns = ["item", "user", "label", "time"]
+
+        df = df.select(["user", "item", "label", "time"])
 
         df = df.drop_nulls()
-        if self.sample_fraction < 1.0:
-            df = df.sample(fraction=self.sample_fraction, seed=42)
-
-        # Strict type conversion
+        
         df = df.with_columns([
             pl.col("label").cast(pl.Float32, strict=False),
             pl.col("time").cast(pl.Int64, strict=False),
         ]).drop_nulls()
 
-        # K-Core Filtering (Min 5 interactions)
-        k = 5
+        if self.sample_fraction < 1.0:
+            df = df.sample(fraction=self.sample_fraction, seed=42)
+
+
+        k = 10
         for _ in range(5):
             prev_h = df.height
-            df = df.filter(pl.col("item").count().over("item") >= k)
-            df = df.filter(pl.col("user").count().over("user") >= k)
+            item_counts = df.group_by("item").len()
+            df = df.join(item_counts, on="item").filter(pl.col("len") >= k).drop("len")
+            
+            user_counts = df.group_by("user").len()
+            df = df.join(user_counts, on="user").filter(pl.col("len") >= k).drop("len")
+            
             if df.height == prev_h:
                 break
 
-        print(f"Loaded {df.height:,} interactions (Standard Mode).")
+        print(f"Loaded {df.height:,} interactions (Standard Mode: User-Item ordered).")
         return df.to_pandas()
 
     # MODE 2: Tag-as-User
