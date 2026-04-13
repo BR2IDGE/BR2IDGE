@@ -17,7 +17,7 @@ Key features include:
 
 ## Requirements
 
-* **Python:** 3.10+ (Recommended)
+* **Python:** 3.9 (Required)
 * **OS:** Linux (recommended for large-scale runs), macOS, or Windows.
 * **Compute:**
   * CPU-only runs are fully supported.
@@ -28,9 +28,25 @@ Key features include:
 
 ## Installation
 
-### Core Dependencies
+### Using pyenv (Recommended)
 
-To install the fundamental requirements for the framework:
+The project includes a `pyenv.toml` file to ensure consistent environments. To set up the environment:
+
+1. Ensure you have `pyenv` installed.
+2. Install the specified Python version:
+   ```bash
+   pyenv install 3.9
+   pyenv local 3.9
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -U pip
+   pip install -r requirements.txt
+   ```
+
+### Manual Installation
+
+To install the fundamental requirements for the framework manually:
 
 **Bash**
 
