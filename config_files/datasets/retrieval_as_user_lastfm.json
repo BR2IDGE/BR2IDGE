@@ -2,7 +2,7 @@
   "dataloader": {
     "dataset_name": "retrieval_as_user",
     "mode": "tag_query",
-    "path": "lastfm360k",
+    "path": "lastfm-dataset-360K",
     "top_k": 100,
     "seed": 42,
     "query_limit": 500,
@@ -14,7 +14,7 @@
       "class_path": "search_recs.recs.dataloader.lastfm.LastFM360KDataLoader",
       "config": {
         "dataloader": {
-          "path": "lastfm360k",
+          "path": "lastfm-dataset-360K",
           "generate_pseudo_timestamps": true,
           "pseudo_time_order": "by_plays_desc"
         }

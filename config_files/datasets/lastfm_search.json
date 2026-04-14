@@ -1,7 +1,7 @@
 {
   "dataloader": {
     "dataset_name": "lastfm",
-    "path": "data/lastfm-hybrid",
+    "path": "lastfm-hybrid",
     "test_size": 0.15,
     "val_size": 0.15,
     "random_state": 42,

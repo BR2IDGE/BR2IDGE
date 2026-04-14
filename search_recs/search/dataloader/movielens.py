@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from .base_dataloader import BaseSearchDatasetBuilder, BuildConfig
 import numpy as np
 import time
+from search_recs.datasets import ensure_dataset
 
 # -------------------------------------------------------------------------
 # BUILD AND LOADING CLASSES
@@ -336,7 +337,7 @@ def load_movielens_dataset(cfg: BuildConfig, dataset_path: str = "./data/ml-25m"
     Automatic selector: determines mode based on 'mode' parameter (default: search).
     """
     mode = kwargs.get("mode", "normal")
-    base_path = pathlib.Path(dataset_path)
+    base_path = ensure_dataset("ml-25m")
     
     # Path fallbacks
     if not base_path.exists():

@@ -8,7 +8,6 @@
     "seed": 42,
     "query_limit": 20000,
 
-    "amazon_meta_url": "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz",
     "amazon_meta_file": "meta_Electronics.json.gz",
     "amazon_max_products": 200000,
     "amazon_cache_pairs": "amazon_search_pairs.parquet",

@@ -1,7 +1,7 @@
 {
   "dataloader": {
     "dataset_name": "LastFM",
-    "path": "lastfm360k",
+    "path": "lastfm-dataset-360K",
     "generate_pseudo_timestamps": true,
     "pseudo_time_order": "by_plays_asc"
   },

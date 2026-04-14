@@ -11,20 +11,11 @@ import pandas as pd
 import numpy as np
 
 from search_recs.recs.dataloader import RecsDataLoader
+from search_recs.datasets import ensure_dataset
 
-# CONSTANTS & URLS
 CSV_FILENAME = "ratings.csv"
 META_FILENAME = "meta_Electronics.json.gz"
-DATASET_FOLDER_NAME = "amazonEletronics"
-
-# Amazon Review Data (2018)
-RATINGS_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/categoryFilesSmall/Electronics.csv"
-META_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz"
-
-# Fallbacks
-RATINGS_FALLBACK = [
-    "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/ratings_Electronics.csv",
-]
+DATASET_FOLDER_NAME = "amazonElectronics"
 
 class AmazonElectronicsDataLoader(RecsDataLoader):
     """
@@ -44,9 +35,7 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
 
         super().__init__(cfg)
 
-        # Path Resolution
-        project_root = Path(__file__).resolve().parents[3]
-        self.dataset_path = project_root / "data" / DATASET_FOLDER_NAME
+        self.dataset_path = ensure_dataset("amazonElectronics")
         self._ensure_paths()
 
     def _ensure_paths(self):
@@ -64,8 +53,9 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
         """Standard User-Item-Rating loading (Enforcing User-Item order)."""
         csv_path = self.dataset_path / CSV_FILENAME
 
-        if not csv_path.exists() and self.auto_download:
-            self._download_file(RATINGS_URL, csv_path)
+        if not csv_path.exists():
+            self.dataset_path = ensure_dataset("amazonElectronics")
+            csv_path = self.dataset_path / CSV_FILENAME
 
         try:
             df = pl.read_csv(
@@ -125,8 +115,9 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
         """Tag-as-User Mode: Categories become Users, ASINs become Items."""
         json_gz_path = self.dataset_path / META_FILENAME
 
-        if not json_gz_path.exists() and self.auto_download:
-            self._download_file(META_URL, json_gz_path)
+        if not json_gz_path.exists():
+            self.dataset_path = ensure_dataset("amazonElectronics")
+            json_gz_path = self.dataset_path / META_FILENAME
 
         # Lazy processing of metadata
         try:

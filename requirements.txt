@@ -13,7 +13,6 @@ torchvision==0.23.0
 tensorflow==2.15.1
 keras==2.15.0
 lightfm==1.17
-implicit==0.7.2
 librecommender==1.5.2
 recbole==1.2.1
 faiss-cpu==1.13.2

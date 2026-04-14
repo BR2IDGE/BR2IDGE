@@ -13,11 +13,9 @@ from sklearn.model_selection import train_test_split
 import polars as pl  # Used for efficient processing of large rating datasets
 
 from .base_dataloader import BaseSearchDatasetBuilder, BuildConfig
+from search_recs.datasets import ensure_dataset
 
 class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
-    META_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz"
-    RATINGS_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/categoryFilesSmall/Electronics.csv"
-
     def __init__(self, cfg: BuildConfig, dataset_name="amazon_electronics", **kwargs):
         super().__init__(cfg)
         self.dataset_name = dataset_name
@@ -28,9 +26,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             r.seed(cfg.random_state)
             np.random.seed(cfg.random_state)
         
-        project_root = Path(__file__).resolve().parents[3]
-        self.dataset_dir = project_root / "data" / dataset_name
-        self.dataset_dir.mkdir(parents=True, exist_ok=True)
+        self.dataset_dir = ensure_dataset("amazonElectronics")
         
         self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
         self.ratings_path = self.dataset_dir / "ratings.csv"
@@ -43,7 +39,10 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             shutil.copyfileobj(resp, f)
 
     def load_search_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        self._download_file(self.META_URL, self.meta_path)
+        if not self.meta_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
+            self.ratings_path = self.dataset_dir / "ratings.csv"
         df_meta = self.build_pairs()
 
         if self.task == "hybrid":
@@ -114,7 +113,9 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             except Exception as e:
                 print(f"[AmazonLoader] Error loading cache: {e}. Regenerating...")
 
-        self._download_file(self.RATINGS_URL, self.ratings_path)
+        if not self.ratings_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.ratings_path = self.dataset_dir / "ratings.csv"
         print("[AmazonLoader] Building Hybrid Dataset (Centroid)... This may take time on the first run.")
 
         # 1. Load interactions using Polars for performance efficiency
@@ -186,7 +187,9 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
     def load_raw(self) -> None:
         """Ensures the file exists."""
-        self._download_file(self.META_URL, self.meta_path)
+        if not self.meta_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
 
     def _clean_description(self, desc_raw) -> str:
         if isinstance(desc_raw, list):
@@ -368,6 +371,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
 # Entry Point
 def get_loader(cfg: BuildConfig, **kwargs):
-    dataset_name = kwargs.pop("dataset_name", "amazon_electronics_meta")
+    dataset_name = kwargs.pop("path", kwargs.pop("dataset_name", "amazonElectronics"))
     loader = AmazonSearchDataLoader(cfg, dataset_name=dataset_name, **kwargs)
     return loader.load_search_data()
