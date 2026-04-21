@@ -50,9 +50,10 @@ class SentenceTransformerTrainerWrapper(ABC):
         self.evaluation_steps = evaluation_steps
         self.save_steps = save_steps
         self.early_stopping_patience = early_stopping_patience
-        self.early_stopping_thresholdt = early_stopping_threshold
+        self.early_stopping_threshold = early_stopping_threshold
 
-        inner_sbert_model = self.model_wrapper 
+        # Accept either a raw SentenceTransformer or an older wrapper exposing `.sbert`.
+        inner_sbert_model = getattr(self.model_wrapper, "sbert", self.model_wrapper)
 
         self.train_dataloader = DataLoader(
             self.train_dataset,
@@ -61,27 +62,34 @@ class SentenceTransformerTrainerWrapper(ABC):
             drop_last=True,
             collate_fn=inner_sbert_model.smart_batching_collate,
         )
-        self.val_dataloader = DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            drop_last=False,
-            collate_fn=inner_sbert_model.smart_batching_collate,
-        )
+        self.val_dataloader = None
+        if self.val_dataset is not None:
+            self.val_dataloader = DataLoader(
+                self.val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                drop_last=False,
+                collate_fn=inner_sbert_model.smart_batching_collate,
+            )
 
         self.callbacks_list = []
 
         try:
+            if self.val_dataloader is None:
+                raise ValueError("Validation dataset not provided.")
             self.evaluator = EmbeddingSimilarityEvaluator.from_input_examples(
-                self.val_dataloader, 
-                name='validation',
+                self.val_dataloader,
+                name="validation",
             )
-            self.early_stop_callback = EarlyStoppingCallback(
-                early_stopping_patience=self.early_stopping_patience, 
-                early_stopping_threshold=self.early_stopping_threshold
-            )
+            if self.early_stopping_patience > 0:
+                self.early_stop_callback = EarlyStoppingCallback(
+                    early_stopping_patience=self.early_stopping_patience,
+                    early_stopping_threshold=self.early_stopping_threshold,
+                )
+                self.callbacks_list.append(self.early_stop_callback)
+            else:
+                self.early_stop_callback = None
             self.load_best_model_at_end = True
-            self.callbacks_list.append(self.early_stop_callback)
         except Exception:
             # Handle case where validation data isn't in Example format (e.g., just triples)
             self.evaluator = None # You must set load_best_model_at_end=False if this happens
@@ -95,8 +103,8 @@ class SentenceTransformerTrainerWrapper(ABC):
             learning_rate=self.learning_rate,
             warmup_ratio=self.num_warmup_factor,
             logging_steps=self.logging_steps,
-            eval_strategy="steps",
-            eval_steps=self.evaluation_steps,
+            eval_strategy="steps" if self.val_dataset is not None else "no",
+            eval_steps=self.evaluation_steps if self.val_dataset is not None else None,
             save_steps=self.save_steps,
             load_best_model_at_end=self.load_best_model_at_end,
             report_to=["tensorboard"],

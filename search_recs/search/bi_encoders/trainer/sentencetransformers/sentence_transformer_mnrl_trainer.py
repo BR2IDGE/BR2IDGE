@@ -38,15 +38,17 @@ class SentenceTransformerMnrlTrainer(SentenceTransformerTrainerWrapper):
             early_stopping_threshold=early_stopping_threshold,
         )
         # Use the sentence-transformers loss
-        self.train_loss = losses.MultipleNegativesRankingLoss(self.model_wrapper)
+        inner_sbert_model = getattr(self.model_wrapper, "sbert", self.model_wrapper)
+        self.train_loss = losses.MultipleNegativesRankingLoss(inner_sbert_model)
 
         self.trainer = SentenceTransformerTrainer(
-            model=self.model_wrapper,
+            model=inner_sbert_model,
             args=self.training_args,
             train_dataset=self.train_dataset,
             eval_dataset=self.val_dataset,
             loss=self.train_loss,
             evaluator=self.evaluator,
+            callbacks=self.callbacks_list,
         )
 
     def train(self):
