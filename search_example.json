@@ -7,10 +7,7 @@
   },
   "model": [
     { 
-      "name": "BM25Model" 
-    },
-    {
-      "name": "BiEncoderSearchModel"
+      "name": "SpladeKnnModel" 
     }
   ],
   "execution": {
