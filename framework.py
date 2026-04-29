@@ -1506,11 +1506,19 @@ def main(args):
     tests = tests if isinstance(tests, list) else []
 
     wants_stats = (len(model_names_queue) > 1) and (len(tests) > 0)
+    tests_norm = {
+        str(t).lower().strip().replace("-", "_").replace(" ", "_")
+        for t in tests
+    }
+    has_wilcoxon = "wilcoxon" in tests_norm
+    has_ttest = bool({"ttest", "t_test", "paired_ttest"} & tests_norm)
 
     n_runs_user = exec_conf.get("n_runs", None)
     if n_runs_user is None:
-        if wants_stats and any(str(t).lower() == "wilcoxon" for t in tests):
+        if wants_stats and has_wilcoxon:
             n_runs = 6
+        elif wants_stats and has_ttest:
+            n_runs = 2
         else:
             n_runs = 1
     else:
@@ -1518,9 +1526,12 @@ def main(args):
 
     window_size_val = float(exec_conf.get("window_size", 0.05))
 
-    if wants_stats and any(str(t).lower() == "wilcoxon" for t in tests) and n_runs < 6:
+    if wants_stats and has_wilcoxon and n_runs < 6:
         print(f"[stats] Warning: Wilcoxon requires multiple runs. Adjusting n_runs: {n_runs} -> 6")
         n_runs = 6
+    elif wants_stats and has_ttest and n_runs < 2:
+        print(f"[stats] Warning: Paired t-test requires at least 2 runs. Adjusting n_runs: {n_runs} -> 2")
+        n_runs = 2
 
     if n_runs < 1:
         n_runs = 1
@@ -1637,7 +1648,8 @@ def main(args):
 
             alpha = float(stats_conf.get("alpha", 0.05))
             symbol = stats_conf.get("symbol", "\u25B2")
-            min_runs = int(stats_conf.get("min_runs", 6))
+            default_min_runs = 6 if has_wilcoxon else (2 if has_ttest else 1)
+            min_runs = int(stats_conf.get("min_runs", default_min_runs))
 
             run_significance_analysis(metrics_dir=metrics_dir, experiment_name=experiment_name, model_pairs=model_pairs, tests=tests, alpha=alpha, symbol=symbol, min_runs=min_runs)
         except ImportError as e:

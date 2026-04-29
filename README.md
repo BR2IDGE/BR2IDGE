@@ -135,6 +135,48 @@ To enable this, add the following fields **right below** `task_type` in your exp
 
 When `hybrid=true`, the run behaves like a normal Recs execution (same stages, same evaluation block, same outputs), but the pipeline switches to the **hybrid data construction / loading** flow according to the selected strategy.
 
+### 5. Statistical Tests (Wilcoxon and Paired t-test)
+
+BR2IDGE can run statistical significance tests after evaluation, using the `evaluation.stats` block.
+
+Available tests:
+
+* `wilcoxon`
+* `ttest_rel` (paired t-test)
+
+Important:
+
+* You must configure at least **2 models** in `model`.
+* Use `execution.n_runs >= 2` for paired comparisons.
+* If only one model is configured, tests are skipped.
+
+**Example with both tests enabled:**
+
+```json
+{
+  "execution": {
+    "n_runs": 3
+  },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "PRECISION", "MAP", "MRR"],
+    "stats": {
+      "tests": ["wilcoxon", "ttest_rel"],
+      "min_runs": 2,
+      "alpha": 0.05,
+      "symbol": "▲"
+    }
+  }
+}
+```
+
+Expected output files in `experimental_results/<dataset>/<task>/`:
+
+* `<experiment_name>_wilcoxon_marked.csv`
+* `<experiment_name>_wilcoxon_diagnostics.csv`
+* `<experiment_name>_ttest_marked.csv`
+* `<experiment_name>_ttest_diagnostics.csv`
+
 ## Minimal Working Example
 
 ### Running a Recommendation Experiment
@@ -281,4 +323,3 @@ Similarly, to utilize the Tag Query strategy, you must update the specific model
 ### Outputs
 
 All results are generated in the `experimental_results/`. The directory structure is organized by:
-

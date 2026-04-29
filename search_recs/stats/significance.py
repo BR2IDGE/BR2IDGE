@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
-from scipy.stats import wilcoxon
+from scipy.stats import ttest_rel, wilcoxon
 
 
 SIGNIFICANCE_TESTS: Dict[str, Callable[..., None]] = {}
@@ -201,6 +201,148 @@ def wilcoxon_signed_rank_test(
     diag_path = metrics_dir / f"{experiment_name}_wilcoxon_diagnostics.csv"
     pd.DataFrame(diagnostics).to_csv(diag_path, index=False)
     print(f"[wilcoxon] Detailed diagnostics saved to: {diag_path}")
+
+
+@register_test("ttest")
+@register_test("t_test")
+@register_test("t-test")
+@register_test("paired_ttest")
+@register_test("ttest_rel")
+def paired_t_test(
+    df: pd.DataFrame,
+    model_pairs: List[Tuple[str, str]],
+    experiment_name: str,
+    metrics_dir: Path,
+    alpha: float = 0.05,
+    symbol: str = "\u25B2",
+    min_runs: int = 2,
+) -> None:
+    required_cols = {"RunId", "Model", "Metric", "K", "Value"}
+    if not required_cols.issubset(df.columns):
+        print(f"[ttest] DataFrame is missing required columns {required_cols}. Aborting test.")
+        return
+
+    df = df.copy()
+    df["Value"] = pd.to_numeric(df["Value"], errors="coerce")
+    df["K"] = pd.to_numeric(df["K"], errors="coerce")
+    df = df.dropna(subset=["Value", "K", "Model", "Metric", "RunId"])
+    df["K"] = df["K"].astype(int)
+
+    if df.empty:
+        print("[ttest] Metrics DataFrame is empty after cleaning.")
+        return
+
+    df_mean = (
+        df.groupby(["Model", "Metric", "K"], as_index=False)["Value"]
+        .mean()
+        .rename(columns={"Value": "Mean"})
+    )
+
+    df_marked = df_mean.copy()
+    df_marked["Value"] = df_marked["Mean"].apply(lambda v: f"{float(v):.6e}")
+    df_marked = df_marked.drop(columns=["Mean"])
+
+    diagnostics: List[dict] = []
+    required_runs = max(int(min_runs), 2)
+
+    for (metric, k), group in df.groupby(["Metric", "K"], sort=False):
+        wide = group.pivot_table(
+            index="RunId",
+            columns="Model",
+            values="Value",
+            aggfunc="mean",
+        )
+
+        for model_a, model_b in model_pairs:
+            if model_a not in wide.columns or model_b not in wide.columns:
+                continue
+
+            pair_df = wide[[model_a, model_b]].dropna()
+
+            if len(pair_df) < required_runs:
+                print(
+                    f"[ttest] Insufficient paired runs ({len(pair_df)}/{required_runs}) "
+                    f"for {model_a} vs {model_b} (Metric={metric}, K={k}). Skipping."
+                )
+                continue
+
+            x = pair_df[model_a].to_numpy()
+            y = pair_df[model_b].to_numpy()
+            diff = x - y
+
+            res = ttest_rel(x, y, nan_policy="omit")
+            try:
+                stat = float(res.statistic)
+                pval = float(res.pvalue)
+            except AttributeError:
+                stat = float(res[0])
+                pval = float(res[1])
+
+            if not np.isfinite(stat) or not np.isfinite(pval):
+                if np.allclose(diff, 0.0):
+                    stat = 0.0
+                    pval = 1.0
+                else:
+                    print(
+                        f"[ttest] Non-finite result for {model_a} vs {model_b} "
+                        f"(Metric={metric}, K={k}). Skipping."
+                    )
+                    continue
+
+            mean_a = float(np.mean(x))
+            mean_b = float(np.mean(y))
+            mean_diff = float(np.mean(diff))
+            significant = bool(pval < alpha)
+
+            if mean_diff > 0:
+                winner = model_a
+            elif mean_diff < 0:
+                winner = model_b
+            else:
+                winner = "tie"
+
+            diagnostics.append(
+                {
+                    "Test": "Paired t-test",
+                    "Experiment": experiment_name,
+                    "Metric": metric,
+                    "K": int(k),
+                    "Model_A": model_a,
+                    "Model_B": model_b,
+                    "N_runs": int(len(pair_df)),
+                    "N_effective": int(len(pair_df)),
+                    "statistic": float(stat),
+                    "p_value": float(pval),
+                    "mean_A": mean_a,
+                    "mean_B": mean_b,
+                    "mean_diff": mean_diff,
+                    "Winner": winner,
+                    "Significant": significant,
+                    "alpha": float(alpha),
+                }
+            )
+
+            if significant and winner in {model_a, model_b}:
+                mask = (
+                    (df_marked["Model"] == winner)
+                    & (df_marked["Metric"] == metric)
+                    & (df_marked["K"] == int(k))
+                )
+                df_marked.loc[mask, "Value"] = df_marked.loc[mask, "Value"].astype(str).apply(
+                    lambda s: s if str(s).endswith(symbol) else str(s) + symbol
+                )
+
+    if not diagnostics:
+        print("[ttest] No model pairs had enough paired runs to apply the test.")
+        return
+
+    marked_path = metrics_dir / f"{experiment_name}_ttest_marked.csv"
+    df_marked.to_csv(marked_path, index=False)
+    print(f"[ttest] Marked summary saved to: {marked_path}")
+
+    diag_path = metrics_dir / f"{experiment_name}_ttest_diagnostics.csv"
+    pd.DataFrame(diagnostics).to_csv(diag_path, index=False)
+    print(f"[ttest] Detailed diagnostics saved to: {diag_path}")
 
 
 # Orchestrator
