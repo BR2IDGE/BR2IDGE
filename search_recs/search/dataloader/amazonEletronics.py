@@ -8,7 +8,7 @@ import os
 import random as r
 from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Iterator
 from sklearn.model_selection import train_test_split
 import polars as pl  # Used for efficient processing of large rating datasets
 
@@ -213,6 +213,23 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                 unique_cats.add(cat_chain)
         return list(unique_cats)
 
+    def _iter_metadata_lines(self) -> Iterator[str]:
+        with gzip.open(self.meta_path, 'rt', encoding='utf-8', errors='ignore') as f:
+            while True:
+                try:
+                    line = f.readline()
+                except EOFError as e:
+                    print(
+                        "[AmazonLoader] Warning: gzip stream ended without a valid "
+                        f"end-of-stream marker ({e}). Continuing with records read so far."
+                    )
+                    break
+
+                if not line:
+                    break
+
+                yield line
+
     def build_pairs(self) -> pd.DataFrame:
         """
         Reads Metadata file line by line.
@@ -229,50 +246,49 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         printed_example = False 
 
         try:
-            with gzip.open(self.meta_path, 'rt', encoding='utf-8') as f:
-                for line in tqdm(f, desc="Generating Query-Doc Pairs"):
-                    try:
-                        row = json.loads(line)
-                        
-                        # DEBUG PRINT OF RAW DATA
-                        if not printed_example:
-                            print("\n" + "="*60)
-                            print("[DEBUG] EXAMPLE OF RAW METADATA OBJECT:")
-                            print(json.dumps(row, indent=4))
-                            print("="*60 + "\n")
-                            printed_example = True
+            for line in tqdm(self._iter_metadata_lines(), desc="Generating Query-Doc Pairs"):
+                try:
+                    row = json.loads(line)
+                    
+                    # DEBUG PRINT OF RAW DATA
+                    if not printed_example:
+                        print("\n" + "="*60)
+                        print("[DEBUG] EXAMPLE OF RAW METADATA OBJECT:")
+                        print(json.dumps(row, indent=4))
+                        print("="*60 + "\n")
+                        printed_example = True
 
-                        asin = row.get("asin")
-                        title = row.get("title", "").strip()
-                        desc = self._clean_description(row.get("description", []))
-                        categories = self._extract_categories(row.get("category", []))
-                        
-                        if not asin or not title or not categories:
-                            continue
-                            
-                        if desc:
-                            document_text = f"{title}. {desc}"
-                        else:
-                            document_text = title
-                        
-                        # --- Core Logic ---
-                        # Ensures that if a product belongs to the "Camera" category,
-                        # it is added to the document list for that query.
-                        for cat in categories:
-                            records.append({
-                                "search_query": cat,
-                                "document": document_text,
-                                "document_id": asin,
-                                "category": "Metadata-Category"
-                            })
-                        
-                        count += 1
-                        if MAX_PRODUCTS_TO_PROCESS and count >= MAX_PRODUCTS_TO_PROCESS:
-                            print(f"[AmazonLoader] Limit of {MAX_PRODUCTS_TO_PROCESS} products reached.")
-                            break
-                            
-                    except (ValueError, json.JSONDecodeError):
+                    asin = row.get("asin")
+                    title = str(row.get("title", "") or "").strip()
+                    desc = self._clean_description(row.get("description", []))
+                    categories = self._extract_categories(row.get("category", row.get("categories", [])))
+                    
+                    if not asin or not title or not categories:
                         continue
+                        
+                    if desc:
+                        document_text = f"{title}. {desc}"
+                    else:
+                        document_text = title
+                    
+                    # --- Core Logic ---
+                    # Ensures that if a product belongs to the "Camera" category,
+                    # it is added to the document list for that query.
+                    for cat in categories:
+                        records.append({
+                            "search_query": cat,
+                            "document": document_text,
+                            "document_id": asin,
+                            "category": "Metadata-Category"
+                        })
+                    
+                    count += 1
+                    if MAX_PRODUCTS_TO_PROCESS and count >= MAX_PRODUCTS_TO_PROCESS:
+                        print(f"[AmazonLoader] Limit of {MAX_PRODUCTS_TO_PROCESS} products reached.")
+                        break
+                        
+                except (ValueError, json.JSONDecodeError):
+                    continue
                         
         except Exception as e:
             print(f"[AmazonLoader] Read error: {e}")
