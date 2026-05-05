@@ -201,7 +201,7 @@ class MovieLensDataLoader:
         return pd.DataFrame(rows)
 
     def _split_and_sample(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        rs = 48  # Can be None
+        rs = self.cfg.random_state if self.cfg.random_state is not None else self._runtime_seed()
 
         train_val, test_df = train_test_split(
             df,

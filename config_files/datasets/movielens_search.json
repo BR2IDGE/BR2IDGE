@@ -5,9 +5,6 @@
     "mode": "normal",
     "test_size": 0.2,
     "val_size": 0.1,
-    "head_train": 5000,
-    "head_val": 300,
-    "head_test": 1000,
     "seed": 45
   },
   "features": {
