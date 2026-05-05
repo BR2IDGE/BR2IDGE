@@ -8,10 +8,10 @@ from scipy.sparse import csr_matrix, vstack, save_npz, load_npz
 from tqdm import tqdm
 import os
  
-from search_recs.search.model import BaseSearchModel
+from search_recs.recs.model import BaseRecsModel
  
  
-class SpladeKnnModel(BaseSearchModel):
+class SpladeKnnModel(BaseRecsModel):
 
     def __init__(self, model_config: dict):
         super().__init__(model_config)

@@ -1,0 +1,510 @@
+[system] Search models loaded: ['BM25Model', 'BiEncoderSearchModel', 'DenseRetrieverModel', 'SpladeKnnModel']
+[system] Recs models loaded: ['ALSModel', 'BaseRecsModel', 'Bert4REC', 'DeepFMModel', 'LightFMModel', 'NMFRecommender']
+[system] Base timestamp: 20260504_193900
+[config] experiment_name: BM25
+[config] task_type: search
+[config] dataset: MovieLens -> movielens_search.json
+[validation] Verifying 1 model(s) for task 'search'...
+✓ Model validation successful.
+[config] Model queue: ['SpladeKnnModel']
+[execution] n_runs = 4 | wants_stats=False | tests=[]
+[data] Loaded shapes: Train=None, Test=None, FullRecs=None
+
+================================================================================
+[RUN] 1/4  run_id=20260504_193900_r01  run_seed=2060846406
+================================================================================
+
+[main] Generating search splits for run 1 (random_state=2060846406)...
+
+======================================================================
+▶ PREPROCESS
+======================================================================
+[preprocess] Generating splits for search...
+[DataLoader] Starting SEARCH mode (Semantic Tags)
+Mode: Search
+[MovieLens-Search] Total pairs: 138194
+[MovieLens-Search] Total UNIQUE QUERIES (Tags): 1105
+✓ preprocess (5.31s)
+[main] Search split complete. Train=5000, Val=13820, Test=1000
+
+########################################
+### MODEL 1/1: SpladeKnnModel | run_id=20260504_193900_r01
+########################################
+
+[run] Model: SpladeKnnModel | hash=d32ba6eb62
+[run] dir=artifacts/MovieLens/SpladeKnnModel/d32ba6eb62
+
+======================================================================
+▶ MODEL_INIT
+======================================================================
+Initializing SpladeKnnModel with model: None
+Parameters: {
+  "pretrained_name": "naver/splade-v3",
+  "token_max_length": 128,
+  "n_neighbors": 11,
+  "auth_token": "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",
+  "model_dir": "./output/splade_knn",
+  "query_col": "search_query",
+  "doc_col": "document",
+  "doc_id_col": "document_id"
+}
+
+[SpladeKnnModel] Config keys: ['dataset_name', 'path', 'mode', 'test_size', 'val_size', 'head_train', 'head_val', 'head_test', 'seed', 'model_type', 'parameters']
+[model] Instance created: <search_recs.search.model.knnsplade.SpladeKnnModel object at 0x7fbc5a99bf70>
+✓ model_init (0.03s)
+
+======================================================================
+▶ FEATURES
+======================================================================
+[SpladeKnnModel] Preprocess started. Train shape: (5000, 4)
+[SpladeKnnModel] Loading SPLADE model: naver/splade-v3
+[SpladeKnnModel] Model loaded. Vocab size: 30522 | Device: cuda
+✓ features (1.61s)
+
+======================================================================
+▶ TRAIN
+======================================================================
+[SpladeKnnModel] SPLADE uses pre-trained weights. No fine-tuning step.
+✓ train (12.44s)
+
+======================================================================
+▶ INDEX
+======================================================================
+[SpladeKnnModel] Building SPLADE+KNN index...
+[SpladeKnnModel] Loading cached matrix from: ./output/splade_knn/splade_matrix.npz
+[SpladeKnnModel] Fitting KNN (n_neighbors=11, metric=cosine)...
+[SpladeKnnModel] Index built. Docs=9133 | Shape=(3892, 30522)
+✓ index (0.49s)
+
+======================================================================
+▶ EVAL
+======================================================================
+[eval] Config: {'top_ks': [5, 10, 20, 50], 'metrics': ['NDCG', 'RECALL', 'MAP', 'PRECISION']}
+[eval] Metrics: ['NDCG', 'RECALL', 'MAP', 'PRECISION']
+[eval] Top-Ks: [5, 10, 20, 50]
+[eval] Calling model.prediction(test_data) with 1000 examples...
+
+[SpladeKnnModel] Starting Prediction Phase...
+[SpladeKnnModel] Mode: Full Corpus Retrieval
+[eval] NDCG@5: 0.00758352 (based on 1000 queries)
+[eval] RECALL@5: 0.01050000 (based on 1000 queries)
+[eval] MAP@5: 0.00783333 (based on 1000 queries)
+[eval] PRECISION@5: 0.00260000 (based on 1000 queries)
+[eval] NDCG@10: 0.00935367 (based on 1000 queries)
+[eval] RECALL@10: 0.01550000 (based on 1000 queries)
+[eval] MAP@10: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@10: 0.00190000 (based on 1000 queries)
+[eval] NDCG@20: 0.00935367 (based on 1000 queries)
+[eval] RECALL@20: 0.01550000 (based on 1000 queries)
+[eval] MAP@20: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@20: 0.00095000 (based on 1000 queries)
+[eval] NDCG@50: 0.01676695 (based on 1000 queries)
+[eval] RECALL@50: 0.04738333 (based on 1000 queries)
+[eval] MAP@50: 0.01033902 (based on 1000 queries)
+[eval] PRECISION@50: 0.00172000 (based on 1000 queries)
+
+=== RESULTS (NORMALIZED) ===
+{
+  "5": {
+    "NDCG": 0.007583518524633291,
+    "RECALL": 0.0105,
+    "MAP": 0.007833333333333333,
+    "PRECISION": 0.0026
+  },
+  "10": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.0019
+  },
+  "20": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.00095
+  },
+  "50": {
+    "NDCG": 0.01676694702143512,
+    "RECALL": 0.04738333333333333,
+    "MAP": 0.010339020181281014,
+    "PRECISION": 0.0017200000000000002
+  }
+}
+[eval] Wide CSV generated: experimental_results/MovieLens/search/BM25_20260504_193900_r01_SpladeKnnModel_table.csv
+[latex] Wide table generated at: experimental_results/MovieLens/search/BM25_20260504_193900_r01_SpladeKnnModel_table.tex
+✓ eval (51.30s)
+
+================================================================================
+[RUN] 2/4  run_id=20260504_193900_r02  run_seed=894340829
+================================================================================
+
+[main] Generating search splits for run 2 (random_state=894340829)...
+
+======================================================================
+▶ PREPROCESS
+======================================================================
+[preprocess] Generating splits for search...
+[DataLoader] Starting SEARCH mode (Semantic Tags)
+Mode: Search
+[MovieLens-Search] Total pairs: 138194
+[MovieLens-Search] Total UNIQUE QUERIES (Tags): 1105
+✓ preprocess (2.28s)
+[main] Search split complete. Train=5000, Val=13820, Test=1000
+
+########################################
+### MODEL 1/1: SpladeKnnModel | run_id=20260504_193900_r02
+########################################
+
+[run] Model: SpladeKnnModel | hash=8cbe4d2d14
+[run] dir=artifacts/MovieLens/SpladeKnnModel/8cbe4d2d14
+
+======================================================================
+▶ MODEL_INIT
+======================================================================
+Initializing SpladeKnnModel with model: None
+Parameters: {
+  "pretrained_name": "naver/splade-v3",
+  "token_max_length": 128,
+  "n_neighbors": 11,
+  "auth_token": "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",
+  "model_dir": "./output/splade_knn",
+  "query_col": "search_query",
+  "doc_col": "document",
+  "doc_id_col": "document_id"
+}
+
+[SpladeKnnModel] Config keys: ['dataset_name', 'path', 'mode', 'test_size', 'val_size', 'head_train', 'head_val', 'head_test', 'seed', 'model_type', 'parameters']
+[model] Instance created: <search_recs.search.model.knnsplade.SpladeKnnModel object at 0x7fbc5a99a0b0>
+✓ model_init (0.00s)
+
+======================================================================
+▶ FEATURES
+======================================================================
+[SpladeKnnModel] Preprocess started. Train shape: (5000, 4)
+[SpladeKnnModel] Loading SPLADE model: naver/splade-v3
+[SpladeKnnModel] Model loaded. Vocab size: 30522 | Device: cuda
+✓ features (1.41s)
+
+======================================================================
+▶ TRAIN
+======================================================================
+[SpladeKnnModel] SPLADE uses pre-trained weights. No fine-tuning step.
+✓ train (12.29s)
+
+======================================================================
+▶ INDEX
+======================================================================
+[SpladeKnnModel] Building SPLADE+KNN index...
+[SpladeKnnModel] Loading cached matrix from: ./output/splade_knn/splade_matrix.npz
+[SpladeKnnModel] Fitting KNN (n_neighbors=11, metric=cosine)...
+[SpladeKnnModel] Index built. Docs=9133 | Shape=(3892, 30522)
+✓ index (0.48s)
+
+======================================================================
+▶ EVAL
+======================================================================
+[eval] Config: {'top_ks': [5, 10, 20, 50], 'metrics': ['NDCG', 'RECALL', 'MAP', 'PRECISION']}
+[eval] Metrics: ['NDCG', 'RECALL', 'MAP', 'PRECISION']
+[eval] Top-Ks: [5, 10, 20, 50]
+[eval] Calling model.prediction(test_data) with 1000 examples...
+
+[SpladeKnnModel] Starting Prediction Phase...
+[SpladeKnnModel] Mode: Full Corpus Retrieval
+[eval] NDCG@5: 0.00758352 (based on 1000 queries)
+[eval] RECALL@5: 0.01050000 (based on 1000 queries)
+[eval] MAP@5: 0.00783333 (based on 1000 queries)
+[eval] PRECISION@5: 0.00260000 (based on 1000 queries)
+[eval] NDCG@10: 0.00935367 (based on 1000 queries)
+[eval] RECALL@10: 0.01550000 (based on 1000 queries)
+[eval] MAP@10: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@10: 0.00190000 (based on 1000 queries)
+[eval] NDCG@20: 0.00935367 (based on 1000 queries)
+[eval] RECALL@20: 0.01550000 (based on 1000 queries)
+[eval] MAP@20: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@20: 0.00095000 (based on 1000 queries)
+[eval] NDCG@50: 0.01676695 (based on 1000 queries)
+[eval] RECALL@50: 0.04738333 (based on 1000 queries)
+[eval] MAP@50: 0.01033902 (based on 1000 queries)
+[eval] PRECISION@50: 0.00172000 (based on 1000 queries)
+
+=== RESULTS (NORMALIZED) ===
+{
+  "5": {
+    "NDCG": 0.007583518524633291,
+    "RECALL": 0.0105,
+    "MAP": 0.007833333333333333,
+    "PRECISION": 0.0026
+  },
+  "10": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.0019
+  },
+  "20": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.00095
+  },
+  "50": {
+    "NDCG": 0.01676694702143512,
+    "RECALL": 0.04738333333333333,
+    "MAP": 0.010339020181281014,
+    "PRECISION": 0.0017200000000000002
+  }
+}
+[eval] Wide CSV generated: experimental_results/MovieLens/search/BM25_20260504_193900_r02_SpladeKnnModel_table.csv
+[latex] Wide table generated at: experimental_results/MovieLens/search/BM25_20260504_193900_r02_SpladeKnnModel_table.tex
+✓ eval (49.37s)
+
+================================================================================
+[RUN] 3/4  run_id=20260504_193900_r03  run_seed=2024429453
+================================================================================
+
+[main] Generating search splits for run 3 (random_state=2024429453)...
+
+======================================================================
+▶ PREPROCESS
+======================================================================
+[preprocess] Generating splits for search...
+[DataLoader] Starting SEARCH mode (Semantic Tags)
+Mode: Search
+[MovieLens-Search] Total pairs: 138194
+[MovieLens-Search] Total UNIQUE QUERIES (Tags): 1105
+✓ preprocess (2.26s)
+[main] Search split complete. Train=5000, Val=13820, Test=1000
+
+########################################
+### MODEL 1/1: SpladeKnnModel | run_id=20260504_193900_r03
+########################################
+
+[run] Model: SpladeKnnModel | hash=68fa4644cd
+[run] dir=artifacts/MovieLens/SpladeKnnModel/68fa4644cd
+
+======================================================================
+▶ MODEL_INIT
+======================================================================
+Initializing SpladeKnnModel with model: None
+Parameters: {
+  "pretrained_name": "naver/splade-v3",
+  "token_max_length": 128,
+  "n_neighbors": 11,
+  "auth_token": "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",
+  "model_dir": "./output/splade_knn",
+  "query_col": "search_query",
+  "doc_col": "document",
+  "doc_id_col": "document_id"
+}
+
+[SpladeKnnModel] Config keys: ['dataset_name', 'path', 'mode', 'test_size', 'val_size', 'head_train', 'head_val', 'head_test', 'seed', 'model_type', 'parameters']
+[model] Instance created: <search_recs.search.model.knnsplade.SpladeKnnModel object at 0x7fbc5c996170>
+✓ model_init (0.00s)
+
+======================================================================
+▶ FEATURES
+======================================================================
+[SpladeKnnModel] Preprocess started. Train shape: (5000, 4)
+[SpladeKnnModel] Loading SPLADE model: naver/splade-v3
+[SpladeKnnModel] Model loaded. Vocab size: 30522 | Device: cuda
+✓ features (1.33s)
+
+======================================================================
+▶ TRAIN
+======================================================================
+[SpladeKnnModel] SPLADE uses pre-trained weights. No fine-tuning step.
+✓ train (12.14s)
+
+======================================================================
+▶ INDEX
+======================================================================
+[SpladeKnnModel] Building SPLADE+KNN index...
+[SpladeKnnModel] Loading cached matrix from: ./output/splade_knn/splade_matrix.npz
+[SpladeKnnModel] Fitting KNN (n_neighbors=11, metric=cosine)...
+[SpladeKnnModel] Index built. Docs=9133 | Shape=(3892, 30522)
+✓ index (0.47s)
+
+======================================================================
+▶ EVAL
+======================================================================
+[eval] Config: {'top_ks': [5, 10, 20, 50], 'metrics': ['NDCG', 'RECALL', 'MAP', 'PRECISION']}
+[eval] Metrics: ['NDCG', 'RECALL', 'MAP', 'PRECISION']
+[eval] Top-Ks: [5, 10, 20, 50]
+[eval] Calling model.prediction(test_data) with 1000 examples...
+
+[SpladeKnnModel] Starting Prediction Phase...
+[SpladeKnnModel] Mode: Full Corpus Retrieval
+[eval] NDCG@5: 0.00758352 (based on 1000 queries)
+[eval] RECALL@5: 0.01050000 (based on 1000 queries)
+[eval] MAP@5: 0.00783333 (based on 1000 queries)
+[eval] PRECISION@5: 0.00260000 (based on 1000 queries)
+[eval] NDCG@10: 0.00935367 (based on 1000 queries)
+[eval] RECALL@10: 0.01550000 (based on 1000 queries)
+[eval] MAP@10: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@10: 0.00190000 (based on 1000 queries)
+[eval] NDCG@20: 0.00935367 (based on 1000 queries)
+[eval] RECALL@20: 0.01550000 (based on 1000 queries)
+[eval] MAP@20: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@20: 0.00095000 (based on 1000 queries)
+[eval] NDCG@50: 0.01676695 (based on 1000 queries)
+[eval] RECALL@50: 0.04738333 (based on 1000 queries)
+[eval] MAP@50: 0.01033902 (based on 1000 queries)
+[eval] PRECISION@50: 0.00172000 (based on 1000 queries)
+
+=== RESULTS (NORMALIZED) ===
+{
+  "5": {
+    "NDCG": 0.007583518524633291,
+    "RECALL": 0.0105,
+    "MAP": 0.007833333333333333,
+    "PRECISION": 0.0026
+  },
+  "10": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.0019
+  },
+  "20": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.00095
+  },
+  "50": {
+    "NDCG": 0.01676694702143512,
+    "RECALL": 0.04738333333333333,
+    "MAP": 0.010339020181281014,
+    "PRECISION": 0.0017200000000000002
+  }
+}
+[eval] Wide CSV generated: experimental_results/MovieLens/search/BM25_20260504_193900_r03_SpladeKnnModel_table.csv
+[latex] Wide table generated at: experimental_results/MovieLens/search/BM25_20260504_193900_r03_SpladeKnnModel_table.tex
+✓ eval (49.58s)
+
+================================================================================
+[RUN] 4/4  run_id=20260504_193900_r04  run_seed=1815734095
+================================================================================
+
+[main] Generating search splits for run 4 (random_state=1815734095)...
+
+======================================================================
+▶ PREPROCESS
+======================================================================
+[preprocess] Generating splits for search...
+[DataLoader] Starting SEARCH mode (Semantic Tags)
+Mode: Search
+[MovieLens-Search] Total pairs: 138194
+[MovieLens-Search] Total UNIQUE QUERIES (Tags): 1105
+✓ preprocess (2.17s)
+[main] Search split complete. Train=5000, Val=13820, Test=1000
+
+########################################
+### MODEL 1/1: SpladeKnnModel | run_id=20260504_193900_r04
+########################################
+
+[run] Model: SpladeKnnModel | hash=93ee820dbf
+[run] dir=artifacts/MovieLens/SpladeKnnModel/93ee820dbf
+
+======================================================================
+▶ MODEL_INIT
+======================================================================
+Initializing SpladeKnnModel with model: None
+Parameters: {
+  "pretrained_name": "naver/splade-v3",
+  "token_max_length": 128,
+  "n_neighbors": 11,
+  "auth_token": "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",
+  "model_dir": "./output/splade_knn",
+  "query_col": "search_query",
+  "doc_col": "document",
+  "doc_id_col": "document_id"
+}
+
+[SpladeKnnModel] Config keys: ['dataset_name', 'path', 'mode', 'test_size', 'val_size', 'head_train', 'head_val', 'head_test', 'seed', 'model_type', 'parameters']
+[model] Instance created: <search_recs.search.model.knnsplade.SpladeKnnModel object at 0x7fbc5a0310c0>
+✓ model_init (0.00s)
+
+======================================================================
+▶ FEATURES
+======================================================================
+[SpladeKnnModel] Preprocess started. Train shape: (5000, 4)
+[SpladeKnnModel] Loading SPLADE model: naver/splade-v3
+[SpladeKnnModel] Model loaded. Vocab size: 30522 | Device: cuda
+✓ features (1.23s)
+
+======================================================================
+▶ TRAIN
+======================================================================
+[SpladeKnnModel] SPLADE uses pre-trained weights. No fine-tuning step.
+✓ train (12.02s)
+
+======================================================================
+▶ INDEX
+======================================================================
+[SpladeKnnModel] Building SPLADE+KNN index...
+[SpladeKnnModel] Loading cached matrix from: ./output/splade_knn/splade_matrix.npz
+[SpladeKnnModel] Fitting KNN (n_neighbors=11, metric=cosine)...
+[SpladeKnnModel] Index built. Docs=9133 | Shape=(3892, 30522)
+✓ index (0.48s)
+
+======================================================================
+▶ EVAL
+======================================================================
+[eval] Config: {'top_ks': [5, 10, 20, 50], 'metrics': ['NDCG', 'RECALL', 'MAP', 'PRECISION']}
+[eval] Metrics: ['NDCG', 'RECALL', 'MAP', 'PRECISION']
+[eval] Top-Ks: [5, 10, 20, 50]
+[eval] Calling model.prediction(test_data) with 1000 examples...
+
+[SpladeKnnModel] Starting Prediction Phase...
+[SpladeKnnModel] Mode: Full Corpus Retrieval
+[eval] NDCG@5: 0.00758352 (based on 1000 queries)
+[eval] RECALL@5: 0.01050000 (based on 1000 queries)
+[eval] MAP@5: 0.00783333 (based on 1000 queries)
+[eval] PRECISION@5: 0.00260000 (based on 1000 queries)
+[eval] NDCG@10: 0.00935367 (based on 1000 queries)
+[eval] RECALL@10: 0.01550000 (based on 1000 queries)
+[eval] MAP@10: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@10: 0.00190000 (based on 1000 queries)
+[eval] NDCG@20: 0.00935367 (based on 1000 queries)
+[eval] RECALL@20: 0.01550000 (based on 1000 queries)
+[eval] MAP@20: 0.00840476 (based on 1000 queries)
+[eval] PRECISION@20: 0.00095000 (based on 1000 queries)
+[eval] NDCG@50: 0.01676695 (based on 1000 queries)
+[eval] RECALL@50: 0.04738333 (based on 1000 queries)
+[eval] MAP@50: 0.01033902 (based on 1000 queries)
+[eval] PRECISION@50: 0.00172000 (based on 1000 queries)
+
+=== RESULTS (NORMALIZED) ===
+{
+  "5": {
+    "NDCG": 0.007583518524633291,
+    "RECALL": 0.0105,
+    "MAP": 0.007833333333333333,
+    "PRECISION": 0.0026
+  },
+  "10": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.0019
+  },
+  "20": {
+    "NDCG": 0.009353666731602954,
+    "RECALL": 0.0155,
+    "MAP": 0.008404761904761904,
+    "PRECISION": 0.00095
+  },
+  "50": {
+    "NDCG": 0.01676694702143512,
+    "RECALL": 0.04738333333333333,
+    "MAP": 0.010339020181281014,
+    "PRECISION": 0.0017200000000000002
+  }
+}
+[eval] Wide CSV generated: experimental_results/MovieLens/search/BM25_20260504_193900_r04_SpladeKnnModel_table.csv
+[latex] Wide table generated at: experimental_results/MovieLens/search/BM25_20260504_193900_r04_SpladeKnnModel_table.tex
+✓ eval (50.32s)
+[stats] Only one model configured; statistical tests will not be run.
+
+[Framework] Finished in 269.05s

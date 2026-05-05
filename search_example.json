@@ -3,7 +3,7 @@
   "task_type": "search",
   "output_dir": "artifacts",
   "dataset": { 
-    "name": "amazonelectronics"
+    "name": "MovieLens"
   },
   "model": [
     { 
@@ -11,10 +11,10 @@
     }
   ],
   "execution": {
-    "force": ["preprocess", "index", "train"],
+    "force": ["preprocess", "features", "eval", "index", "train"],
     "skip": [],
     "no_save": [],
-    "n_runs": 1
+    "n_runs": 4
   },
   "evaluation": {
     "top_ks": [5, 10, 20, 50],

@@ -27,33 +27,19 @@ Key features include:
   * Ensure sufficient disk space if `n_runs > 1` is configured.
 
 ## Installation
+### Manual Installation
 
-### Using pyenv (Recommended)
+**Requires pip ≤ 25.2**
 
-The project includes a `pyenv.toml` file to ensure consistent environments. To set up the environment:
-
-1. Ensure you have `pyenv` installed.
-2. Install the specified Python version:
+1. Before installing, downgrade pip if needed:
+    ```bash
+    python -m pip install "pip<=25.2"
+    ```
+2. Install dependencies:
    ```bash
-   pyenv install 3.9
-   pyenv local 3.9
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -U pip
    pip install -r requirements.txt
    ```
 
-### Manual Installation
-
-To install the fundamental requirements for the framework manually:
-
-**Bash**
-
-```
-pip install -U pip
-pip install -r requirements.txt
-```
 
 ## Configs
 

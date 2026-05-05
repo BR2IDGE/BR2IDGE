@@ -4,7 +4,8 @@
     "parameters": {
       "pretrained_name": "naver/splade-v3",
       "token_max_length": 128,
-      "n_neighbors": 10,
+      "n_neighbors": 11,
+      "auth_token": "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",
       "model_dir": "./output/splade_knn",
       "query_col": "search_query",
       "doc_col": "document",
