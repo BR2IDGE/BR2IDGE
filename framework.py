@@ -1544,22 +1544,22 @@ def main(args):
     exp_context_dir.mkdir(parents=True, exist_ok=True)
     splits_path = exp_context_dir / "splits.pkl"
 
-    # Capture the output of preprocess
-    train_data, val_data, test_data = run_preprocess(
-        task_type,
-        ds_cfg,
-        dataset_key,
-        splits_path,
-        force_preprocess=("preprocess" in force),
-        no_save=("preprocess" in no_save),
-        skip_preprocess=("preprocess" in skip),
-      exp_config=exp_config,
-)
-
     full_recs_data = None
+    train_data = val_data = test_data = None
+
     if task_type == "recs":
-        full_recs_data = train_data 
-        train_data = None 
+        train_data, val_data, test_data = run_preprocess(
+            task_type,
+            ds_cfg,
+            dataset_key,
+            splits_path,
+            force_preprocess=("preprocess" in force),
+            no_save=("preprocess" in no_save),
+            skip_preprocess=("preprocess" in skip),
+            exp_config=exp_config,
+        )
+        full_recs_data = train_data
+        train_data = None
         test_data = None
 
     print(f"[data] Loaded shapes: Train={_safe_len(train_data)}, Test={_safe_len(test_data)}, FullRecs={_safe_len(full_recs_data)}")
@@ -1570,6 +1570,21 @@ def main(args):
         print(f"\n{'=' * 80}")
         print(f"[RUN] {run_idx}/{n_runs}  run_id={run_id}  run_seed={run_seed}")
         print(f"{'=' * 80}\n")
+
+        if task_type == "search":
+            print(f"[main] Generating search splits for run {run_idx} (random_state={run_seed})...")
+            ds_cfg.setdefault("dataloader", {})["seed"] = run_seed
+            train_data, val_data, test_data = run_preprocess(
+                task_type,
+                ds_cfg,
+                dataset_key,
+                splits_path=None,
+                force_preprocess=True,
+                no_save=True,
+                skip_preprocess=False,
+                exp_config=exp_config,
+            )
+            print(f"[main] Search split complete. Train={_safe_len(train_data)}, Val={_safe_len(val_data)}, Test={_safe_len(test_data)}")
 
         if task_type == "recs":
             current_fold = run_idx - 1
