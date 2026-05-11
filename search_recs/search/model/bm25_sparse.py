@@ -27,6 +27,7 @@ class BM25Model(BaseRecsModel):
         # 3. Hybrid Strategy (Tag Fusion)
         self.strategy: str = params.get("task", "normal")  # 'normal' or 'hybrid'
         self.dataset_path: str = params.get("dataset_path", "./data/ml-25m")
+        self.tagfusion_min_relevance: float = float(params.get("tagfusion_min_relevance", 0.9))
         self.movie_tag_map: Optional[Dict] = None
 
         # 4. Internal State
@@ -54,7 +55,7 @@ class BM25Model(BaseRecsModel):
         # --- CASE 1: MOVIELENS (Genome Tags) ---
         if "ml-25m" in str(path).lower():
             print(f"[BM25Model] Loading internal Genome Tags (MovieLens)...")
-            self.movie_tag_map = load_genome_tag_map(str(path), min_relevance=0.9)
+            self.movie_tag_map = load_genome_tag_map(str(path), min_relevance=self.tagfusion_min_relevance)
 
         # --- CASE 2: LAST.FM (2K Tags associated with 360K base) ---
         elif "lastfm" in str(path).lower():
@@ -133,21 +134,25 @@ class BM25Model(BaseRecsModel):
 
         # --- TAG/CATEGORY MAPPING LOGIC (AMAZON / GENERIC) ---
         if self.strategy == "hybrid":
-            # If the loader provided categories in the query column of the training set,
-            # we build the ID -> Category map here.
-            print("[BM25Model] Building Tag/Category map from Metadata...")
-            self.movie_tag_map = {}
-            
-            # Optimization: zip is faster than iterrows
-            ids = train_data[self.did_col].astype(str).tolist()
-            cats = train_data[self.qcol].astype(str).tolist()
-            
-            for doc_id, cat in zip(ids, cats):
-                if cat and str(cat).lower() != 'nan':
-                    # Format {Tag: Weight}
-                    self.movie_tag_map[doc_id] = {str(cat): 1.0}
-            
-            print(f"[BM25Model] {len(self.movie_tag_map)} items mapped with categories.")
+            category_values = set(train_data.get("category", pd.Series(dtype=str)).dropna().astype(str).unique())
+            is_user_history_movielens = bool(category_values) and category_values <= {"UserHistoryTrain"}
+
+            if is_user_history_movielens:
+                print("[BM25Model] MovieLens user-history hybrid detected; Genome tag map will be loaded lazily.")
+                self.movie_tag_map = None
+            else:
+                # If the loader provided real categories, build an item -> category map.
+                print("[BM25Model] Building Tag/Category map from Metadata...")
+                self.movie_tag_map = {}
+
+                ids = train_data[self.did_col].astype(str).tolist()
+                cats = train_data.get("category", train_data[self.qcol]).astype(str).tolist()
+
+                for doc_id, cat in zip(ids, cats):
+                    if cat and str(cat).lower() != 'nan':
+                        self.movie_tag_map[doc_id] = {str(cat): 1.0}
+
+                print(f"[BM25Model] {len(self.movie_tag_map)} items mapped with categories.")
 
         # --- INDEXING ---
         if has_candidate_mode:

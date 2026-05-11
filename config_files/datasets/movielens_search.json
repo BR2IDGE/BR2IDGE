@@ -2,7 +2,7 @@
   "dataloader": {
     "dataset_name": "movielens",
     "path": "./data/ml-25m",
-    "mode": "normal",
+    "mode": "hybrid",
     "test_size": 0.2,
     "val_size": 0.1,
     "seed": 45
