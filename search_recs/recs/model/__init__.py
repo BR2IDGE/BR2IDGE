@@ -2,9 +2,11 @@ __all__ = [
     "BaseRecsModel",
     "DeepFMModel",
     "LightFMModel",
+    "LightGCNModel",
     "Bert4REC",
     "ALSModel",
     "NMFRecommender",
+    "ItemKNNModel",
 ]
 
 def __getattr__(name):
@@ -17,6 +19,9 @@ def __getattr__(name):
     if name == "DeepFMModel":
         from .libreco_model import DeepFMModel
         return DeepFMModel
+    if name == "LightGCNModel":
+        from ...recs.model.light_gcn import LightGCNModel
+        return LightGCNModel
     if name == "Bert4REC":
         from .bert4rec import Bert4REC
         return Bert4REC
@@ -26,4 +31,7 @@ def __getattr__(name):
     if name == "NMFRecommender":
         from .nmf_recommender import NMFRecommender
         return NMFRecommender
+    if name == "ItemKNNModel":
+        from ...recs.model.item_knn import ItemKNNModel
+        return ItemKNNModel
     raise AttributeError(name)
