@@ -5,7 +5,7 @@
     "parameters": {
       "embedding_dim": 32,
       "n_layers": 2,
-      "epochs": 25,
+      "epochs": 1,
       "learning_rate": 0.001,
       "reg_weight": 0.0001,
       "batch_size": 8192,
