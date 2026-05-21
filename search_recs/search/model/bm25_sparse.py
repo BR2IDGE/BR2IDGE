@@ -71,7 +71,7 @@ class BM25Model(BaseRecsModel):
                 
                 # Group by artist name
                 name_to_tags = df_merged.groupby(df_merged["name"].str.lower().str.strip())["tagValue"].apply(
-                    lambda x: {str(t): 1.0 for t in x.unique()[:15]}
+                    lambda x: {str(t): 1.0 for t in x.unique()[:5]}
                 ).to_dict()
 
                 # 3. Map to 360K numerical IDs (using the order of the indexed collection)

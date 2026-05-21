@@ -253,7 +253,7 @@ def load_lastfm_search_dataset(
 
 
 def load_lastfm_dataset(cfg: BuildConfig, **kwargs):
-    mode = kwargs.get("mode", "normal")
+    mode = kwargs.get("mode", "hybrid")
     dataset_path = kwargs.get("dataset_path", kwargs.get("path", "./data/lastfm-hybrid"))
 
     if mode == "hybrid":

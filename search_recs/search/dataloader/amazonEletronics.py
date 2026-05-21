@@ -20,7 +20,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         super().__init__(cfg)
         self.dataset_name = dataset_name
         self.cfg = cfg
-        self.task = kwargs.get("mode", "normal")  # Selects 'normal' or 'hybrid' mode
+        self.task = kwargs.get("mode", "hybrid")  # Selects 'normal' or 'hybrid' mode
         
         if cfg.random_state is not None:
             r.seed(cfg.random_state)

@@ -265,9 +265,21 @@ class MovieLensDataLoader:
 
         ratings = pd.read_csv(self.base_path / "ratings.csv")
         movies = pd.read_csv(self.base_path / "movies.csv")
+        genome_tags = pd.read_csv(self.base_path / "genome-tags.csv")
+        genome_scores = pd.read_csv(self.base_path / "genome-scores.csv")
 
-        # Document corpus
-        movies["document"] = movies.apply(MovieLensBuilder.create_movie_document, axis=1)
+        min_relevance = 0.9
+
+        genome_scores = genome_scores[genome_scores["relevance"] >= min_relevance].copy()
+        genome_data = genome_scores.merge(genome_tags, on="tagId", how="left")
+
+        tag_agg = genome_data.groupby("movieId")["tag"].agg(list).reset_index()
+        movies = movies.merge(tag_agg, on="movieId", how="left")
+
+        movies["document"] = movies.apply(
+            lambda r: MovieLensBuilder.create_movie_document(r, include_tags=True),
+            axis=1,
+        )
         corpus_lookup = movies[["movieId", "document"]].rename(columns={"movieId": "document_id"})
         corpus_lookup["document_id"] = corpus_lookup["document_id"].astype(int)
 
