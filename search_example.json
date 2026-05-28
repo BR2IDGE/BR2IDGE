@@ -3,18 +3,18 @@
   "task_type": "search",
   "output_dir": "artifacts",
   "dataset": { 
-    "name": "Movielens"
+    "name": "lastfm"
   },
   "model": [
     { 
-      "name": "BM25Model" 
+      "name": "BM25Model"
     }
   ],
   "execution": {
     "force": ["preprocess", "features", "eval", "index", "train"],
     "skip": [],
     "no_save": [],
-    "n_runs": 3
+    "n_runs": 1
   },
   "evaluation": {
     "top_ks": [5, 10, 20, 50],

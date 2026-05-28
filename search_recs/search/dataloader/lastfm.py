@@ -1,7 +1,7 @@
 import json
 import random
 import time
-from typing import Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -53,13 +53,52 @@ def _generate_random_seed():
 def _load_360k_interactions_pandas(dataset_path) -> pd.DataFrame:
     users = _load_360k_user_lookup(dataset_path)
     artists = _load_360k_artist_lookup(dataset_path)
-    return (
+    lf = (
         _scan_360k_plays(dataset_path)
         .join(users.lazy(), on="user_name", how="inner")
         .join(artists.lazy().select(["item", "artist_key", "artist_name"]), on="artist_key", how="inner")
-        .select(["user", "item", "label", "artist_name"])
-        .collect()
-        .to_pandas()
+        .select(["user", "item", "label"])
+    )
+    return lf.collect().to_pandas()
+
+
+def _build_hetrec_tag_lists_by_artist(
+    builder: LastFmHybridBuilder,
+    min_tag_freq: int,
+    top_k_tags: int,
+) -> Dict[str, List[str]]:
+    artists_2k = builder.artists_2k_df.copy()
+    artists_2k["name_clean"] = artists_2k["name"].astype(str).str.lower().str.strip()
+
+    tags_full = builder.tagging_df.merge(builder.tags_df, on="tagID")
+    tags_full = tags_full.merge(
+        artists_2k[["id", "name_clean"]],
+        left_on="artistID",
+        right_on="id",
+    )
+    tags_full["tagValue"] = tags_full["tagValue"].astype(str).str.lower().str.strip()
+    tags_full = tags_full[tags_full["tagValue"] != ""].copy()
+
+    if int(min_tag_freq) > 0:
+        tag_counts = tags_full["tagValue"].value_counts()
+        valid_tags = tag_counts[tag_counts >= int(min_tag_freq)].index
+        tags_full = tags_full[tags_full["tagValue"].isin(valid_tags)].copy()
+
+    if tags_full.empty:
+        return {}
+
+    grouped = (
+        tags_full.groupby(["name_clean", "tagValue"])
+        .size()
+        .reset_index(name="tag_weight")
+        .sort_values(["name_clean", "tag_weight"], ascending=[True, False])
+    )
+    best = grouped.groupby("name_clean", sort=False).head(int(top_k_tags)).copy()
+
+    return (
+        best.groupby("name_clean")["tagValue"]
+        .agg(lambda xs: [str(x) for x in xs if str(x).strip()])
+        .to_dict()
     )
 
 
@@ -72,19 +111,45 @@ def load_lastfm_hybrid_dataset(
     min_hist_len: int = 3,
     max_hist_len: int = 50,
     max_pairs_per_user: int = 50,
+    min_tag_freq: int = 5,
+    top_k_tags: int = 20,
 ):
     builder = LastFmHybridBuilder(data_dir=dataset_path, cfg=cfg)
     builder.load_raw()
 
     artist_lookup = _load_360k_artist_lookup(builder.lastfm360k_dir)
+    tag_lists_by_artist = _build_hetrec_tag_lists_by_artist(
+        builder,
+        min_tag_freq=int(min_tag_freq),
+        top_k_tags=int(top_k_tags),
+    )
     corpus_lookup = (
-        artist_lookup.select([pl.col("item").alias("document_id"), pl.col("artist_name").alias("document")])
+        artist_lookup.select([
+            pl.col("item").alias("document_id"),
+            pl.col("artist_name").alias("document"),
+            pl.col("artist_name_clean"),
+        ])
         .to_pandas()
     )
+    corpus_lookup["item_tag_list"] = corpus_lookup["artist_name_clean"].map(
+        lambda name: tag_lists_by_artist.get(str(name), [])
+    )
+    corpus_lookup["item_tags"] = corpus_lookup["item_tag_list"].map(
+        lambda tags: json.dumps(tags, ensure_ascii=False)
+    )
+    corpus_lookup["item_tag_text"] = corpus_lookup["item_tag_list"].map(
+        lambda tags: " ".join(tags)
+    )
+    corpus_lookup["document"] = (
+        corpus_lookup["document"].astype(str)
+        + " "
+        + corpus_lookup["item_tag_text"].astype(str)
+    ).str.strip()
+    corpus_lookup = corpus_lookup.drop(columns=["artist_name_clean", "item_tag_list"])
 
     interactions = _load_360k_interactions_pandas(builder.lastfm360k_dir)
     all_items = corpus_lookup["document_id"].to_numpy(dtype=int)
-    rs = int(time.time() * 1000) % (2**31 - 1)
+    rs = cfg.random_state if cfg.random_state is not None else int(time.time() * 1000) % (2**31 - 1)
     rng = np.random.default_rng(rs)
 
     train_rows, test_rows = [], []
@@ -114,7 +179,7 @@ def load_lastfm_hybrid_dataset(
         for t in target_indices:
             hist = seq[max(0, t - max_hist_len):t]
             train_rows.append(
-                {"search_query": ",".join(map(str, hist)), "document_id": int(seq[t]), "category": "UserHistoryTrain"}
+                {"search_query": ",".join(map(str, hist)), "document_id": int(seq[t]), "category": ""}
             )
 
         half = len(test_items) // 2
@@ -122,13 +187,15 @@ def load_lastfm_hybrid_dataset(
         seen = set(train_items) | set(query_items) | set(gt_items)
         possible = np.setdiff1d(all_items, np.fromiter(seen, dtype=int))
         negs = rng.choice(possible, size=min(n_neg, len(possible)), replace=False).tolist()
+        candidates = list(map(int, gt_items)) + negs
+        rng.shuffle(candidates)
 
         test_rows.append(
             {
                 "userId": int(uid),
                 "search_query": ",".join(map(str, query_items)),
                 "ground_truth_ids": json.dumps(list(map(int, gt_items))),
-                "candidate_ids": json.dumps(list(map(int, gt_items)) + negs),
+                "candidate_ids": json.dumps(candidates),
                 "category": "UserHistoryTestUserwise",
                 "document_id": -1,
                 "document": "",
@@ -137,9 +204,21 @@ def load_lastfm_hybrid_dataset(
 
     train_pairs = pd.DataFrame(train_rows)
     train_df = train_pairs.merge(corpus_lookup, on="document_id", how="inner") if not train_pairs.empty else train_pairs
+    catalog_df = corpus_lookup.copy()
+    catalog_df["search_query"] = catalog_df["item_tag_text"].where(
+        catalog_df["item_tag_text"].astype(str).str.strip() != "",
+        catalog_df["document"],
+    )
+    catalog_df["category"] = catalog_df["item_tag_text"]
+    train_df = pd.concat([train_df, catalog_df], ignore_index=True, sort=False)
     test_df = pd.DataFrame(test_rows)
 
-    print("[lastfm-hybrid] Built local user-history search dataset from LastFM 360K.")
+    tagged_docs = int((corpus_lookup["item_tags"].astype(str) != "[]").sum())
+    print(
+        "[lastfm-hybrid] Built local user-history search dataset from LastFM 360K. "
+        f"Catalog docs={len(corpus_lookup)} | tagged docs={tagged_docs} | "
+        f"interactions={len(interactions)}"
+    )
     return train_df.reset_index(drop=True), pd.DataFrame(columns=train_df.columns), test_df.reset_index(drop=True)
 
 
@@ -267,6 +346,8 @@ def load_lastfm_dataset(cfg: BuildConfig, **kwargs):
             min_hist_len=kwargs.get("min_hist_len", 3),
             max_hist_len=kwargs.get("max_hist_len", 50),
             max_pairs_per_user=kwargs.get("max_pairs_per_user", 50),
+            min_tag_freq=kwargs.get("min_tag_freq", 5),
+            top_k_tags=kwargs.get("top_k_tags", 20),
         )
 
     print("[DataLoader] Starting Last.fm SEARCH mode (Tags -> Artists)")
