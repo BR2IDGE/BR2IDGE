@@ -3,7 +3,7 @@
   "task_type": "search",
   "output_dir": "artifacts",
   "dataset": { 
-    "name": "lastfm"
+    "name": "amazonelectronics"
   },
   "model": [
     { 

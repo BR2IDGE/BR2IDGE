@@ -43,7 +43,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             self.dataset_dir = ensure_dataset("amazonElectronics")
             self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
             self.ratings_path = self.dataset_dir / "ratings.csv"
-        df_meta = self.build_pairs()
+        df_meta = self.build_pairs(include_category_tags_in_document=self.task == "hybrid")
 
         if self.task == "hybrid":
             print("Hybrid strategy selected.")
@@ -213,6 +213,14 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                 unique_cats.add(cat_chain)
         return list(unique_cats)
 
+    def _format_category_tags(self, categories: List[str]) -> str:
+        clean_categories = [
+            str(cat).strip()
+            for cat in categories
+            if str(cat).strip()
+        ]
+        return " ".join(sorted(set(clean_categories), key=str.lower))
+
     def _iter_metadata_lines(self) -> Iterator[str]:
         with gzip.open(self.meta_path, 'rt', encoding='utf-8', errors='ignore') as f:
             while True:
@@ -230,7 +238,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
                 yield line
 
-    def build_pairs(self) -> pd.DataFrame:
+    def build_pairs(self, include_category_tags_in_document: bool = False) -> pd.DataFrame:
         """
         Reads Metadata file line by line.
         Generates (Query=Category, Doc=Product) pairs.
@@ -270,6 +278,11 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                         document_text = f"{title}. {desc}"
                     else:
                         document_text = title
+
+                    category_tag_text = self._format_category_tags(categories)
+                    if include_category_tags_in_document and category_tag_text:
+                        document_text = f"{document_text}. {category_tag_text}"
+                    category_value = category_tag_text if include_category_tags_in_document else "Metadata-Category"
                     
                     # --- Core Logic ---
                     # Ensures that if a product belongs to the "Camera" category,
@@ -279,7 +292,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                             "search_query": cat,
                             "document": document_text,
                             "document_id": asin,
-                            "category": "Metadata-Category"
+                            "category": category_value
                         })
                     
                     count += 1
