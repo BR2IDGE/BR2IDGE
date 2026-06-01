@@ -105,7 +105,7 @@ class BiEncoderModel(BaseRecsModel):
         train_hf = self._convert_to_hf_dataset(self._train_df)
         val_hf = self._convert_to_hf_dataset(self._val_df)
 
-        if self.task == "hybrid":
+        if self.task in ("hybrid", "centroid-vector", "centroid_vector"):
             print("[BiEncoderModel] Hybrid mode detected. Skipping fine-tuning (using pre-trained weights).")
             return
 
@@ -263,7 +263,7 @@ class BiEncoderModel(BaseRecsModel):
             
             query_embs_np = None
 
-            if self.task == "hybrid":
+            if self.task in ("hybrid", "centroid-vector", "centroid_vector"):
                 vecs = []
                 for q_str in queries:
                     v = self._encode_history_mean(q_str)
@@ -303,7 +303,7 @@ class BiEncoderModel(BaseRecsModel):
         # ---------------------------------------------------------------------
         print(f"[BiEncoderModel] Mode: Full Corpus Retrieval. Task: {self.task.upper()}")
         
-        if self.task == "hybrid":
+        if self.task in ("hybrid", "centroid-vector", "centroid_vector"):
             if self.annoy_index is None: raise RuntimeError("Index not initialized.")
             vecs = [self._encode_history_mean(q) for q in queries]
             query_embs_np = np.array(vecs, dtype="float32")

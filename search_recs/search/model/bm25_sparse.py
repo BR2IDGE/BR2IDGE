@@ -133,10 +133,9 @@ class BM25Model(BaseRecsModel):
         has_candidate_mode = isinstance(test_data, pd.DataFrame) and ("candidate_ids" in test_data.columns)
 
         # --- TAG/CATEGORY MAPPING LOGIC (AMAZON / GENERIC) ---
-        if self.strategy == "hybrid":
+        if self.strategy in ("hybrid", "tag-query", "tag_query"):
             category_values = set(train_data.get("category", pd.Series(dtype=str)).dropna().astype(str).unique())
             is_user_history_movielens = bool(category_values) and category_values <= {"UserHistoryTrain"}
-
             if is_user_history_movielens:
                 print("[BM25Model] MovieLens user-history hybrid detected; Genome tag map will be loaded lazily.")
                 self.movie_tag_map = None
@@ -269,7 +268,7 @@ class BM25Model(BaseRecsModel):
             # Use the correct column (qcol) and convert to string
             raw_histories = test_data[self.qcol].astype(str).tolist()
             
-            if self.strategy == "hybrid":
+            if self.strategy in ("hybrid", "tag-query", "tag_query"):
                 # Convert IDs -> Categories (Tags) using the map generated in preprocess
                 final_queries = [self._generate_tag_query(h) for h in raw_histories]
                 # Debug to ensure transformation worked
@@ -324,7 +323,7 @@ class BM25Model(BaseRecsModel):
             print("[BM25Model] Standard Search Mode (Full Corpus)...")
             raw_queries = test_data[self.qcol].tolist()
 
-            if self.strategy == "hybrid":
+            if self.strategy in ("hybrid", "tag-query", "tag_query"):
                 print(f"[BM25Model] Applying Tag Fusion on {len(raw_queries)} queries...")
                 final_queries = [self._generate_tag_query(q) for q in raw_queries]
             else:

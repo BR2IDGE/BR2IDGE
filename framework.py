@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import sys
 import importlib
@@ -205,6 +206,35 @@ def _is_hybrid_retrieval_as_user(exp_config: dict, task_type: str) -> bool:
     s = re.sub(r"-+", "-", s)
 
     return s in { "retrieval-as-user", "retrievalasuser", "retrieval-asuser", "retrieval-as-user", "retrieval-as-user ", }
+
+
+_SEARCH_HYBRID_STRATEGIES = {"centroid-vector", "tag-query"}
+
+
+def _norm_search_hybrid_strategy(s: str) -> str:
+    s = str(s or "").strip().lower()
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.replace("querry", "query")
+    return s
+
+
+def _inject_search_hybrid_task(real_model_config: dict, exp_config: dict, task_type: str) -> dict:
+    if task_type != "search":
+        return real_model_config
+    exp_cfg = exp_config or {}
+    if not bool(exp_cfg.get("hybrid", False)):
+        return real_model_config
+    strategy = exp_cfg.get("hybridStrategie", exp_cfg.get("hybridStrategy", ""))
+    norm = _norm_search_hybrid_strategy(str(strategy))
+    if norm not in _SEARCH_HYBRID_STRATEGIES:
+        if norm:
+            print(f"[model] Warning: unrecognized hybridStrategy '{strategy}' for search. Valid: {sorted(_SEARCH_HYBRID_STRATEGIES)}")
+        return real_model_config
+    config = copy.deepcopy(real_model_config)
+    config.setdefault("parameters", {})["task"] = "hybrid"
+    print(f"[model] Hybrid search: hybridStrategy='{norm}' → injecting task='hybrid' into model parameters")
+    return config
 
 
 def _norm_key_simple(s: str) -> str:
@@ -1111,11 +1141,19 @@ def run_preprocess(task_type, ds_cfg, dataset_key, splits_path, force_preprocess
         loader_entry = get_dataloader_entry(dataset_key, task_type)
 
     if task_type == "search":
+        exp_cfg = exp_config or {}
+        if bool(exp_cfg.get("hybrid", False)):
+            strategy = exp_cfg.get("hybridStrategie", exp_cfg.get("hybridStrategy", ""))
+            norm = _norm_search_hybrid_strategy(str(strategy))
+            if norm in _SEARCH_HYBRID_STRATEGIES:
+                dl_params = {**dl_params, "mode": "hybrid"}
+                print(f"[preprocess] Hybrid search: hybridStrategy='{norm}' → overriding dataloader mode to 'hybrid'")
+
         from search_recs.search.dataloader.base_dataloader import BuildConfig
         seed = int(dl_params.get("seed", 0))
         h_train = _opt_int(dl_params.get("head_train"))
         h_test = _opt_int(dl_params.get("head_test"))
-        
+
         build_cfg = BuildConfig(
             test_size=dl_params.get("test_size", 0.3),
             val_size=dl_params.get("val_size", 0.1),
@@ -1617,6 +1655,7 @@ def main(args):
             md_cfg_path, _ = resolve_model_config(model_entry, base_path)
             md_cfg = json.loads(md_cfg_path.read_text(encoding="utf-8"))
             real_model_config = md_cfg.get("model", md_cfg)
+            real_model_config = _inject_search_hybrid_task(real_model_config, exp_config, task_type)
             full_config = {**ds_cfg, **md_cfg, "experiment": exp_config}
 
             base_run_dir = prepare_run_dir(exp_config, ds_cfg, md_cfg, dataset_key, current_model_name)
