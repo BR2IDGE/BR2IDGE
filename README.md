@@ -1,19 +1,23 @@
 
-# BR2IDGE
+# BR2IDGE - Benchmarking Recommendation and Retrieval Integration for Diverse and Generalized Evaluation
 
 ## Introduction
 
 **BR2IDGE** is a **config-driven benchmarking framework** that unifies **Information Retrieval (Search)** and **Recommender Systems (Recs)** under a single, consistent pipeline.
 
-Designed for reproducibility and extensibility, BR2IDGE allows researchers to execute Search and Recommendation experiments using a single runner. It features a plug-in architecture to easily integrate  **new datasets** ,  **models** , and  **ranking metrics** .
+Designed for reproducibility and extensibility, BR2IDGE allows researchers to execute Search and Recommendation experiments using a single runner. It features a plug-in architecture to easily integrate **new datasets**, **models**, and **ranking metrics**.
 
 Key features include:
 
 * **Unified Pipeline:** A single entry point (`framework.py`) for both Search and Recs tasks.
-* **Shared Evaluation:** Consistent interface for ranking metrics (NDCG, Recall, Precision, MAP, MRR).
+* **Shared Evaluation:** Consistent interface for ranking metrics (e.g., NDCG, Precision, Recall).
 * **Bridging Strategies:** Built-in support for "inverse tasks," allowing the study of **Search → Recs** (using retrieval to build user interactions) and **Recs → Search** (transforming signals into query-document tasks).
 * **Reproducibility:** Experiments are defined via structured JSON configs, utilizing config hashing for stable environments.
 * **Efficiency:** Supports checkpoints and stage-level caching to skip or reuse expensive computation steps.
+
+## Supported Models and How to Run Them
+
+Some implemented models shown in the paper include `LightFMModel`, `DeepFMModel`, `Bert4REC`, `LightGCNModel`, `ItemKNNModel`, `BM25Model`, `DenseRetrieverModel`, `BiEncoderSearchModel`, `SpladeKnnModel`, and `ColBERTModel`; implemented datasets include `MovieLens` and `LastFM`; and implemented metrics include `NDCG`, `PRECISION`, and `RECALL`.
 
 ## Requirements
 
@@ -49,17 +53,24 @@ BR2IDGE is driven by a hierarchical configuration system. You run experiments by
 
 This is the entry point for any execution. It defines the task type, the components to use, and execution controls.
 
-**Example `experiment.json`:**
+`task_type` must be one of:
+
+* `recs`: runs recommendation models (RS domain)
+* `search`: runs information retrieval models (IR domain)
+
+Choose `task_type` first, then select compatible `dataset` and `model`.
+
+**Example `my_experiment.json`:**
 
 **JSON**
 
 ```json
 {
-  "experiment_name": "BM25_Baseline",
+  "experiment_name": "BM25_MovieLens_Baseline",
   "task_type": "search",
   "output_dir": "artifacts",
 
-  "dataset": { "name": "amazoneletronics" },
+  "dataset": { "name": "movielens" },
 
   "model": [
     { "name": "BM25Model" }
@@ -74,9 +85,41 @@ This is the entry point for any execution. It defines the task type, the compone
 
   "evaluation": {
     "top_ks": [5, 10, 20, 50],
-    "metrics": ["NDCG", "RECALL", "MAP", "PRECISION"]
+    "metrics": ["NDCG", "PRECISION", "RECALL"]
   }
 }
+```
+
+**How to configure dataset and model**
+
+In your experiment file (`.json`), set:
+
+```json
+"dataset": { "name": "movielens" },
+"model": [{ "name": "LightFMModel" }]
+```
+
+You can switch to another dataset/model by changing only these fields, for example:
+
+```json
+"dataset": { "name": "lastfm" },
+"model": [{ "name": "BM25Model" }]
+```
+
+You can also run more than one model in the same experiment:
+
+```json
+"model": [
+  { "name": "LightFMModel" },
+  { "name": "DeepFMModel" },
+  { "name": "Bert4REC" }
+]
+```
+
+Run command pattern for your custom file:
+
+```bash
+python framework.py --config my_experiment.json
 ```
 
 ### 2. Dataset & Model Resolution
@@ -102,26 +145,159 @@ You can bypass auto-resolution by providing an explicit path:
 
 ### 3. Execution Controls
 
-The pipeline consists of five stages: `preprocess` → `features` → `train` → `index` → `eval`. You can control these via the `execution` block:
+The pipeline consists of five stages: `preprocess` → `features` → `train` → `index` → `eval`.
+Use `execution` to control run flow at a high level:
 
-* **`skip`**: Stages to reuse from cache/checkpoints.
-* **`force`**: Stages that must re-run, overwriting previous artifacts.
-* **`n_runs`**: Number of times to repeat the pipeline (useful for statistical significance).
+* **`skip`**: skips listed stages
+* **`force`**: forces listed stages to run again
+* **`no_save`**: runs listed stages without persisting their artifacts
+* **`n_runs`**: repeats the full experiment multiple times
 
-### 4. Hybrid (Bridging) Mode in Recs
+For detailed cache/checkpoint behavior and resume logic, see **Topic 7 (Checkpoints and Resume)**.
 
-BR2IDGE also supports **hybrid recommender executions** using bridging strategies.
-To enable this, add the following fields **right below** `task_type` in your experiment config:
+### 4. Hybrid (Bridging) Mode (Unified for the 4 Strategies)
 
-* **`hybrid`**: `true` or `false` (default is `false` if omitted).
-* **`hybridStrategie`**: only used if `hybrid=true`. Options:
+The 4 hybrid strategies are configured in the **same way** in the main experiment `.json`.
 
-  * `"query-as-user"`
-  * `"retrieval-as-user"`
+Add these fields right below `task_type`:
 
-When `hybrid=true`, the run behaves like a normal Recs execution (same stages, same evaluation block, same outputs), but the pipeline switches to the **hybrid data construction / loading** flow according to the selected strategy.
+* **`hybrid`**: `true` or `false` (default: `false`)
+* **`hybridStrategie`** (or `hybridStrategy`): only used when `hybrid=true`
 
-### 5. Statistical Tests (Wilcoxon and Paired t-test)
+Supported strategies:
+
+* `"query-as-user"` (**recs**)
+* `"retrieval-as-user"` (**recs**)
+* `"centroid-vector"` (**search**)
+* `"tag-query"` (**search**)
+
+#### 4.1 Query-as-User (Recs) - Model used: `LightFMModel`
+
+```json
+{
+  "experiment_name": "Hybrid_QueryAsUser_Recs",
+  "task_type": "recs",
+  "hybrid": true,
+  "hybridStrategie": "query-as-user",
+  "dataset": { "name": "movielens" },
+  "model": [{ "name": "LightFMModel" }],
+  "execution": { "n_runs": 1 },
+  "evaluation": {
+    "n_pos_samples": 20,
+    "n_neg_samples": 200,
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "PRECISION", "RECALL"]
+  }
+}
+```
+
+Run:
+
+```bash
+python framework.py --config hybrid_query_as_user_recs.json
+```
+
+#### 4.2 Retrieval-as-User (Recs) - Model used: `LightFMModel`
+
+```json
+{
+  "experiment_name": "Hybrid_RetrievalAsUser_Recs",
+  "task_type": "recs",
+  "hybrid": true,
+  "hybridStrategie": "retrieval-as-user",
+  "dataset": { "name": "amazonElectronics" },
+  "model": [{ "name": "LightFMModel" }],
+  "execution": { "n_runs": 1 },
+  "evaluation": {
+    "n_pos_samples": 50,
+    "n_neg_samples": 1000,
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "PRECISION", "RECALL"]
+  }
+}
+```
+
+Run:
+
+```bash
+python framework.py --config hybrid_retrieval_as_user_recs.json
+```
+
+#### 4.3 Centroid-Vector (Search) - Model used: `BiEncoderSearchModel`
+
+```json
+{
+  "experiment_name": "Hybrid_CentroidVector_Search",
+  "task_type": "search",
+  "hybrid": true,
+  "hybridStrategie": "centroid-vector",
+  "dataset": { "name": "movielens" },
+  "model": [{ "name": "BiEncoderSearchModel" }],
+  "execution": { "n_runs": 1 },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "PRECISION", "RECALL"]
+  }
+}
+```
+
+Run:
+
+```bash
+python framework.py --config hybrid_centroid_vector_search.json
+```
+
+#### 4.4 Tag-Query (Search) - Model used: `BM25Model`
+
+```json
+{
+  "experiment_name": "Hybrid_TagQuery_Search",
+  "task_type": "search",
+  "hybrid": true,
+  "hybridStrategie": "tag-query",
+  "dataset": { "name": "lastfm" },
+  "model": [{ "name": "BM25Model" }],
+  "execution": { "n_runs": 1 },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "PRECISION", "RECALL"]
+  }
+}
+```
+
+Run:
+
+```bash
+python framework.py --config hybrid_tag_query_search.json
+```
+
+### 5. Positive/Negative Sampling Rules
+
+Use the following standard values:
+
+* **Recs models (non-hybrid)**:
+  * All use **20 positives / 200 negatives**
+* **Search models on Amazon Electronics**:
+  * **50 positives / 1000 negatives**
+* **Query-as-User** and **Retrieval-as-User**:
+  * Amazon Electronics only: **50 positives / 1000 negatives**
+* **Centroid Vector** and **Tag Query**:
+  * MovieLens: **20 positives / 200 negatives**
+  * LastFM: **20 positives / 200 negatives**
+  * Amazon Electronics: **50 positives / 1000 negatives**
+
+Set these in `evaluation`:
+
+```json
+"evaluation": {
+  "n_pos_samples": 50,
+  "n_neg_samples": 1000,
+  "top_ks": [5, 10, 20, 50],
+  "metrics": ["NDCG", "PRECISION", "RECALL"]
+}
+```
+
+### 6. Statistical Tests (Wilcoxon and Paired t-test)
 
 BR2IDGE can run statistical significance tests after evaluation, using the `evaluation.stats` block.
 
@@ -145,7 +321,7 @@ Important:
   },
   "evaluation": {
     "top_ks": [5, 10, 20, 50],
-    "metrics": ["NDCG", "RECALL", "PRECISION", "MAP", "MRR"],
+    "metrics": ["NDCG", "PRECISION", "RECALL"],
     "stats": {
       "tests": ["wilcoxon", "ttest_rel"],
       "min_runs": 2,
@@ -162,6 +338,40 @@ Expected output files in `experimental_results/<dataset>/<task>/`:
 * `<experiment_name>_wilcoxon_diagnostics.csv`
 * `<experiment_name>_ttest_marked.csv`
 * `<experiment_name>_ttest_diagnostics.csv`
+
+### 7. Checkpoints and Resume
+
+BR2IDGE saves run artifacts and automatically reuses them whenever possible.
+
+Where files are stored:
+
+* `artifacts/<dataset>/<model>/<config_hash>/runs/<run_id>/`
+* Example files: `run_meta.json`, `metrics.json`, `model.pkl`, `last.pt`, `lightfm.npz`, `als_factors.npz`, `nmf_factors.npz`, `keras_weights.weights.h5`
+
+How resume works:
+
+* In `features` and `train`, the framework tries to load checkpoints from the current `run_dir`.
+* If no checkpoint is found, it tries to load from a previous run under the same `<dataset>/<model>/<config_hash>/runs/`.
+* In `eval`, when `skip` is active for `eval`, it tries to reuse `metrics.json` (including from previous runs) and avoids re-evaluating.
+
+Operational behavior with `execution` flags:
+
+* `skip` + existing artifacts: stage is reused from cache/checkpoint when available
+* `force` on a stage: that stage runs again even if artifacts already exist
+* `no_save` on a stage: stage runs, but no new artifact is persisted for that stage
+
+Quick example:
+
+```json
+"execution": {
+  "skip": ["preprocess", "features", "train"],
+  "force": ["eval"],
+  "no_save": [],
+  "n_runs": 1
+}
+```
+
+In this example, preprocess/features/train try to reuse artifacts, while `eval` is forced to run again.
 
 ## Minimal Working Example
 
@@ -185,127 +395,17 @@ To run a baseline IR model using the standard IR pipeline:
 python framework.py --config search_example.json
 ```
 
-### Running a Hybrid Recommendation Experiment (Query-as-User / Retrieval-as-User)
-
-Below is a minimal example of a **hybrid Recs** config.
-It adds `hybrid` and `hybridStrategie` (everything else remains a normal execution).
-
-**Example `recs_hybrid_example.json`:**
-
-```json
-{
-  "experiment_name": "Hybrid_Recs_Baseline",
-  "task_type": "recs",
-
-  "hybrid": true,
-  "hybridStrategie": "query-as-user",
-
-  "output_dir": "artifacts",
-
-  "dataset": { "name": "movielens" },
-
-  "model": [
-    { "name": "LightFMModel" }
-  ],
-
-  "execution": {
-    "skip": [],
-    "force": [],
-    "no_save": [],
-    "n_runs": 1
-  },
-
-  "evaluation": {
-    "top_ks": [5, 10, 20, 50],
-    "metrics": ["NDCG", "RECALL", "MAP", "PRECISION", "MRR"]
-  }
-}
-```
-
-To switch strategies, change only:
-
-```json
-"hybridStrategie": "retrieval-as-user"
-```
-
-Run it normally:
-
-```bash
-python framework.py --config recs_hybrid_example.json
-```
-
-### Running a Hybrid Search Experiment (Centroid Vector / Tag Query)
-
-#### Dataset Configuration for Hybrid Mode
-
-To enable hybrid functionality at the data level, ensure your dataset configuration uses the "hybrid" mode. 
-
-```json
-{
-  "dataloader": {
-    "dataset_name": "movielens_hybrid",
-    "path": "./data/ml-25m",
-    "mode": "hybrid",
-    "test_size": 0.2,
-    "val_size": 0.1,
-    "seed": 45
-  },
-  "features": {
-    "query_col": "search_query",
-    "doc_col": "document",
-    "cat_col": "category",
-    "id_col": "document_id"
-  }
-}
-```
-
-#### Centroid Vector
-
-To use the Centroid Vector strategy, you must explicitly set the task to hybrid within your model's specific configuration file `bi_encoder.json`.
-
-```json
-  {
-    "model": {
-      "model_name": "BiEncoderSearchModel",
-      "name": "BiEncoderSearchModel",
-      "parameters": {
-        "task": "hybrid",
-        "pretrained_name": "all-MiniLM-L6-v2",
-        "token_max_length": 128,
-        "batch_size": 96,
-        "learning_rate": 1e-7,
-        "epochs": 3,
-        "annoy_n_trees": 10,
-        "model_dir": "./output/bi_encoder"
-      }
-    }
-  }
-```
-#### Tag Query
-
-Similarly, to utilize the Tag Query strategy, you must update the specific model configuration file `bm25_search.json` by setting the task to hybrid. This ensures the BM25 retriever correctly processes the expanded query signals derived from tags.
-
-```json
-{
-  "model": {
-    "model_name": "BM25Model",
-    "name": "BM25Model",
-    "parameters": {
-      "task": "hybrid",
-      "index_name": "bm25_index",
-      "model": "bm25",
-      "query_col": "search_query",
-      "doc_col": "document",
-      "doc_id_col": "document_id",
-      "hyperparams": { "b": 0.75, "k1": 1.5 },
-      "dataset_path": "./data/ml-25m",
-      "tagfusion_min_relevance": 0.9
-    }
-  }
-}
-
-```
-
 ### Outputs
 
-All results are generated in the `experimental_results/`. The directory structure is organized by:
+BR2IDGE writes outputs to two main locations:
+
+* **Run artifacts and checkpoints:** `artifacts/<dataset>/<model>/<config_hash>/runs/<run_id>/`
+* **Evaluation tables and statistical reports:** `experimental_results/<dataset>/<task>/`
+
+Typical output files include:
+
+* `metrics.json` per run
+* `<experiment_name>_<run_id>_<model>_table.csv` (and `.tex`)
+* `<experiment_name>_metrics_all.csv` (when multi-model stats are enabled)
+* `<experiment_name>_wilcoxon_marked.csv`, `<experiment_name>_wilcoxon_diagnostics.csv`
+* `<experiment_name>_ttest_marked.csv`, `<experiment_name>_ttest_diagnostics.csv`
