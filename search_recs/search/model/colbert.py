@@ -1,11 +1,5 @@
-"""
-ColBERTv2 — fixed implementation.
-See inline comments marked FIX for every correction applied.
-"""
-
 import json
 import string
-import pathlib
 import numpy as np
 import pandas as pd
 import torch
@@ -17,7 +11,6 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModel
 
 from search_recs.recs.model import BaseRecsModel
-from search_recs.search.dataloader.movielens import load_genome_tag_map
 
 
 class ResidualCompressor:
@@ -89,7 +82,7 @@ class ResidualCompressor:
         for d in range(self.dim):
             quantized[:, d] = np.clip(
                 np.searchsorted(self.bucket_cutoffs[d], residuals[:, d]),
-                0, self.n_buckets - 1,         
+                0, self.n_buckets - 1,
             ).astype(np.uint8)
 
         return centroid_ids, quantized
@@ -99,12 +92,10 @@ class ResidualCompressor:
         centroid_ids: np.ndarray,
         quantized:    np.ndarray,
     ) -> np.ndarray:
-        # Validate centroid IDs before indexing — catches storage bugs early
         if centroid_ids.max() >= self.n_centroids or centroid_ids.min() < 0:
             raise ValueError(
                 f"centroid_ids out of range [0, {self.n_centroids}): "
-                f"got min={centroid_ids.min()}, max={centroid_ids.max()}. "
-                f"Re-run fit() to rebuild the index with the corrected _compress_index."
+                f"got min={centroid_ids.min()}, max={centroid_ids.max()}."
             )
         centers   = self.centroids[centroid_ids]
         q_safe    = np.clip(quantized, 0, self.n_buckets - 1)
@@ -117,7 +108,7 @@ class ResidualCompressor:
         ids = np.empty(len(embs), dtype=np.int32)
         C   = self.centroids
         for i in range(0, len(embs), chunk):
-            sim              = embs[i : i + chunk] @ C.T
+            sim                = embs[i : i + chunk] @ C.T
             ids[i : i + chunk] = sim.argmax(axis=1).astype(np.int32)
         return ids
 
@@ -163,14 +154,10 @@ class ColBERTModel(BaseRecsModel):
                 _dev = "cpu"
         self.device: str = _dev
 
-        self.qcol:    str = params.get("query_col",   "search_query")
-        self.dcol:    str = params.get("doc_col",     "document")
-        self.did_col: str = params.get("doc_id_col",  "document_id")
-
-        self.strategy:     str             = params.get("task",         "normal")
-        self.dataset_path: str             = params.get("dataset_path", "./data/ml-25m")
-        self.filter_punct: bool            = params.get("filter_punctuation", True)
-        self.movie_tag_map: Optional[Dict] = None
+        self.qcol:    str  = params.get("query_col",        "search_query")
+        self.dcol:    str  = params.get("doc_col",          "document")
+        self.did_col: str  = params.get("doc_id_col",       "document_id")
+        self.filter_punct: bool = params.get("filter_punctuation", True)
 
         self.use_compression: bool = params.get("use_compression", True)
         self.n_centroids:     int  = params.get("n_centroids",     1024)
@@ -192,13 +179,12 @@ class ColBERTModel(BaseRecsModel):
         self.corpus_size: int = 0
 
         print(
-            f"[ColBERTModel v2] Init | Mode: {self.strategy.upper()} | "
-            f"Backbone: {self.backbone} | dim={self.dim} | device={self.device} | "
-            f"compression={'ON' if self.use_compression else 'OFF'} "
+            f"[ColBERTModel v2] Init | Backbone: {self.backbone} | dim={self.dim} | "
+            f"device={self.device} | compression={'ON' if self.use_compression else 'OFF'} "
             f"(n_centroids={self.n_centroids}, n_bits={self.n_bits})"
         )
 
-    # ------------------------------------------------------------------ tokenizer
+    # ------------------------------------------------------------------ encoder
 
     def _load_tokenizer_and_encoder(self):
         if self.tokenizer is None:
@@ -319,74 +305,11 @@ class ColBERTModel(BaseRecsModel):
         else:
             return self._doc_embs[indices]
 
-    # ------------------------------------------------------------------ hybrid
-
-    def _ensure_external_tag_data(self):
-        if self.movie_tag_map is not None:
-            return
-        path = pathlib.Path(self.dataset_path)
-        if "ml-25m" in str(path).lower():
-            print("[ColBERTModel v2] Loading Genome Tags (MovieLens)...")
-            self.movie_tag_map = load_genome_tag_map(str(path), min_relevance=0.9)
-        elif "lastfm" in str(path).lower():
-            print("[ColBERTModel v2] Loading Last.fm tags...")
-            try:
-                tags_df    = pd.read_csv(path / "tags.dat",               sep="\t", encoding="latin-1", on_bad_lines="skip")
-                tagging_df = pd.read_csv(path / "user_taggedartists.dat", sep="\t", encoding="latin-1", on_bad_lines="skip")
-                artists_2k = pd.read_csv(path / "artists.dat",            sep="\t", encoding="latin-1", on_bad_lines="skip")
-                df_merged  = (
-                    tagging_df
-                    .merge(tags_df, on="tagID")
-                    .merge(artists_2k[["id", "name"]], left_on="artistID", right_on="id")
-                )
-                name_to_tags = (
-                    df_merged.groupby(df_merged["name"].str.lower().str.strip())["tagValue"]
-                    .apply(lambda x: {str(t): 1.0 for t in x.unique()[:15]})
-                    .to_dict()
-                )
-                self.movie_tag_map = {}
-                if self._collection:
-                    for doc in self._collection:
-                        name_clean = str(doc["text"]).lower().strip()
-                        if name_clean in name_to_tags:
-                            self.movie_tag_map[str(doc["id"])] = name_to_tags[name_clean]
-                print(f"[ColBERTModel v2] Tags mapped for {len(self.movie_tag_map)} artists.")
-            except Exception as e:
-                print(f"[ColBERTModel v2] Error processing Last.fm tags: {e}")
-                self.movie_tag_map = {}
-        else:
-            print("[ColBERTModel v2] No external tag loader for this dataset path.")
-
-    def _generate_tag_query(self, history_str: str) -> str:
-        self._ensure_external_tag_data()
-        if not self.movie_tag_map:
-            return str(history_str).replace(",", " ")
-        item_ids       = [x.strip() for x in str(history_str).split(",") if x.strip()]
-        tag_aggregator: Dict[str, float] = {}
-        for mid in item_ids:
-            for tag_name, relevance in self.movie_tag_map.get(str(mid), {}).items():
-                tag_aggregator[tag_name] = tag_aggregator.get(tag_name, 0.0) + relevance
-        top_tags = [
-            t for t, _ in sorted(tag_aggregator.items(), key=lambda x: x[1], reverse=True)[:15]
-        ]
-        return " ".join(top_tags) if top_tags else ""
-
     # ------------------------------------------------------------------ preprocess
 
     def preprocess(self, train_data: pd.DataFrame, **kwargs):
-        print(f"[ColBERTModel v2] Preprocess | Strategy: {self.strategy}")
         test_data          = kwargs.get("test_data")
         has_candidate_mode = isinstance(test_data, pd.DataFrame) and ("candidate_ids" in test_data.columns)
-
-        if self.strategy == "hybrid":
-            print("[ColBERTModel v2] Building Tag/Category map from metadata...")
-            self.movie_tag_map = {}
-            ids  = train_data[self.did_col].astype(str).tolist()
-            cats = train_data[self.qcol].astype(str).tolist()
-            for doc_id, cat in zip(ids, cats):
-                if cat and cat.lower() != "nan":
-                    self.movie_tag_map[doc_id] = {str(cat): 1.0}
-            print(f"[ColBERTModel v2] {len(self.movie_tag_map)} items mapped with categories.")
 
         if has_candidate_mode:
             unique_docs = train_data[[self.did_col, self.dcol]].drop_duplicates(subset=[self.did_col])
@@ -461,26 +384,18 @@ class ColBERTModel(BaseRecsModel):
         # ---- CANDIDATE MODE ------------------------------------------------
         if has_candidate_mode:
             print("[ColBERTModel v2] Candidate-mode prediction (late-interaction)...")
-            raw_histories = test_data[self.qcol].astype(str).tolist()
-
-            if self.strategy == "hybrid":
-                final_queries = [self._generate_tag_query(h) for h in raw_histories]
-                if final_queries:
-                    print(f"[Debug] Example: '{raw_histories[0]}' -> '{final_queries[0]}'")
-            else:
-                final_queries = raw_histories
-
-            cand_lists = [self._parse_json_list(r["candidate_ids"])     for _, r in test_data.iterrows()]
+            queries    = test_data[self.qcol].astype(str).tolist()
+            cand_lists = [self._parse_json_list(r["candidate_ids"])          for _, r in test_data.iterrows()]
             gt_sets    = [set(self._parse_json_list(r["ground_truth_ids"])) for _, r in test_data.iterrows()]
             doc_id_to_idx: Dict[str, int] = {did: i for i, did in enumerate(self._doc_ids)}
 
             all_y_true: List[np.ndarray] = []
             all_y_pred: List[np.ndarray] = []
-            n = len(final_queries)
+            n = len(queries)
 
             for bstart in tqdm(range(0, n, 64), desc="ColBERT v2 Search"):
-                bend    = min(bstart + 64, n)
-                Q       = self._encode_queries(final_queries[bstart:bend])
+                bend = min(bstart + 64, n)
+                Q    = self._encode_queries(queries[bstart:bend])
 
                 for bi, qi in enumerate(range(bstart, bend)):
                     cands = cand_lists[qi]
@@ -515,22 +430,18 @@ class ColBERTModel(BaseRecsModel):
         # ---- STANDARD / FULL-CORPUS MODE -----------------------------------
         else:
             print("[ColBERTModel v2] Standard full-corpus search mode...")
-            raw_queries   = test_data[self.qcol].tolist()
-            final_queries = (
-                [self._generate_tag_query(q) for q in raw_queries]
-                if self.strategy == "hybrid" else raw_queries
-            )
+            queries         = test_data[self.qcol].astype(str).tolist()
             doc_text_to_idx: Dict[str, int] = {d["text"]: i for i, d in enumerate(self._collection)}
 
             all_y_pred: List[np.ndarray] = []
             all_y_true: List[np.ndarray] = []
             doc_chunk_size = 256
-            n = len(final_queries)
+            n = len(queries)
 
             print(f"[ColBERTModel v2] Running MaxSim over {self.corpus_size} docs...")
             for bstart in tqdm(range(0, n, 32), desc="ColBERT v2 Ranking"):
                 bend         = min(bstart + 32, n)
-                Q            = self._encode_queries(final_queries[bstart:bend])
+                Q            = self._encode_queries(queries[bstart:bend])
                 batch_scores = np.zeros((bend - bstart, self.corpus_size), dtype=np.float32)
 
                 for d_start in range(0, self.corpus_size, doc_chunk_size):
