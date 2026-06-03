@@ -1,4 +1,3 @@
-import json
 import os
 import re
 import shutil
@@ -9,7 +8,13 @@ from typing import Dict, Iterable, Optional
 import requests
 
 
-DEFAULT_DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1c8gLAue8Vp-b9KM93RQwh7hIAAonEgF5"
+# Datasets are published as a single Zenodo record. The `files-archive` endpoint
+# returns one outer zip that bundles one .zip per dataset (a "zip of zips").
+ZENODO_RECORD_ID = os.environ.get("BR2IDGE_ZENODO_RECORD_ID", "20492270")
+ZENODO_FILES_ARCHIVE_URL = (
+    os.environ.get("BR2IDGE_DATASETS_ZENODO_ARCHIVE_URL")
+    or f"https://zenodo.org/api/records/{ZENODO_RECORD_ID}/files-archive"
+)
 
 DATASETS: Dict[str, Dict] = {
     "ml-25m": {
@@ -82,20 +87,6 @@ def _dataset_key(name: str) -> str:
     raise KeyError(f"Unknown dataset '{name}'. Known datasets: {list(DATASETS)}")
 
 
-def _manifest_path() -> Path:
-    return _repo_root() / "config_files" / "datasets" / "google_drive_datasets.json"
-
-
-def _load_manifest() -> Dict:
-    path = _manifest_path()
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise RuntimeError(f"Could not read dataset Drive manifest at {path}: {exc}") from exc
-
-
 def _required_exist(path: Path, required: Iterable[str]) -> bool:
     return path.is_dir() and all((path / rel).exists() for rel in required)
 
@@ -165,48 +156,6 @@ def _move_extracted_dataset(tmp_dir: Path, target_dir: Path, required: Iterable[
         shutil.copytree(source, target_dir)
 
 
-def _extract_file_id(value: str) -> Optional[str]:
-    if not value:
-        return None
-    patterns = [
-        r"/file/d/([A-Za-z0-9_-]+)",
-        r"[?&]id=([A-Za-z0-9_-]+)",
-        r"uc\?export=download&id=([A-Za-z0-9_-]+)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, value)
-        if match:
-            return match.group(1)
-    if re.fullmatch(r"[A-Za-z0-9_-]{20,}", value.strip()):
-        return value.strip()
-    return None
-
-
-def _confirm_token(response: requests.Response) -> Optional[str]:
-    for key, value in response.cookies.items():
-        if key.startswith("download_warning"):
-            return value
-    match = re.search(r"confirm=([0-9A-Za-z_]+)", response.text[:100_000])
-    return match.group(1) if match else None
-
-
-def _drive_warning_form(response: requests.Response) -> Optional[tuple[str, Dict[str, str]]]:
-    text = response.text[:200_000]
-    if "download-form" not in text:
-        return None
-
-    form = re.search(r'<form[^>]+id="download-form"[^>]+action="([^"]+)"[^>]*>(.*?)</form>', text, re.S)
-    if not form:
-        return None
-
-    action = form.group(1).replace("&amp;", "&")
-    body = form.group(2)
-    params: Dict[str, str] = {}
-    for name, value in re.findall(r'<input[^>]+name="([^"]+)"[^>]+value="([^"]*)"', body):
-        params[name] = value.replace("&amp;", "&")
-    return action, params
-
-
 def _looks_like_zip(path: Path) -> bool:
     try:
         return path.exists() and path.stat().st_size > 0 and zipfile.is_zipfile(path)
@@ -214,22 +163,15 @@ def _looks_like_zip(path: Path) -> bool:
         return False
 
 
-def _download_drive_file(file_id: str, dest: Path) -> None:
+def _download_file(url: str, dest: Path) -> None:
+    """Stream a URL to `dest`, validating that the result is a real zip."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    session = requests.Session()
-    url = "https://drive.google.com/uc"
-    params = {"export": "download", "id": file_id}
-    response = session.get(url, params=params, stream=True, timeout=60)
-    token = _confirm_token(response)
-    if token:
-        params["confirm"] = token
-        response = session.get(url, params=params, stream=True, timeout=60)
-    else:
-        warning_form = _drive_warning_form(response)
-        if warning_form:
-            action, form_params = warning_form
-            response.close()
-            response = session.get(action, params=form_params, stream=True, timeout=60)
+    response = requests.get(
+        url,
+        stream=True,
+        timeout=(30, 120),  # (connect, read) — read timeout is per-chunk, not total
+        headers={"User-Agent": "BR2IDGE-datasets/1.0"},
+    )
     response.raise_for_status()
 
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -246,99 +188,72 @@ def _download_drive_file(file_id: str, dest: Path) -> None:
         except Exception:
             pass
         raise RuntimeError(
-            f"Google Drive download for file id '{file_id}' did not produce a valid zip. "
-            f"First bytes/text: {preview!r}"
+            f"Download did not produce a valid zip: {url}. First bytes/text: {preview!r}"
         )
 
 
-def _download_url(url: str, dest: Path) -> None:
-    file_id = _extract_file_id(url)
-    if file_id:
-        _download_drive_file(file_id, dest)
-        return
+def _download_zenodo_bundle_and_extract_archives(archives_dir: Path) -> None:
+    """
+    Download the Zenodo `files-archive` bundle (a zip containing one .zip per
+    dataset) once, and extract every inner .zip into `archives_dir`
+    (i.e. data/_archives/).
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    response = requests.get(url, stream=True, timeout=60)
-    response.raise_for_status()
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    with tmp.open("wb") as fh:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                fh.write(chunk)
-    tmp.replace(dest)
+    Each extracted file is named exactly like the per-dataset archive expected by
+    DATASETS (e.g. 'ml-25m.zip'), so the normal extraction flow in
+    ensure_dataset() can proceed unchanged. Because the bundle contains every
+    dataset, a single ~2 GB download populates all archives at once.
+    """
+    archives_dir.mkdir(parents=True, exist_ok=True)
+    bundle_path = archives_dir / "_zenodo_bundle.zip"
 
-    if dest.suffix.lower() == ".zip" and not _looks_like_zip(dest):
-        preview = dest.read_text(errors="ignore")[:300] if dest.exists() else ""
+    print(f"[datasets] Downloading Zenodo bundle (zip-of-zips) from {ZENODO_FILES_ARCHIVE_URL} ...")
+    print("[datasets] Note: this is a single large download (~2 GB) containing all datasets.")
+    _download_file(ZENODO_FILES_ARCHIVE_URL, bundle_path)
+
+    extracted = []
+    try:
+        with zipfile.ZipFile(bundle_path, "r") as zf:
+            for member in zf.infolist():
+                if member.is_dir():
+                    continue
+                # Use only the basename to avoid path traversal and any nesting.
+                inner_name = Path(member.filename).name
+                if not inner_name.lower().endswith(".zip"):
+                    continue
+                dest = archives_dir / inner_name
+                with zf.open(member) as src, dest.open("wb") as out:
+                    shutil.copyfileobj(src, out, length=1024 * 1024)
+                extracted.append(inner_name)
+                print(f"[datasets] Extracted inner archive: {inner_name}")
+    finally:
         try:
-            dest.unlink()
+            bundle_path.unlink()
         except Exception:
             pass
-        raise RuntimeError(f"Download URL did not produce a valid zip: {url}. First bytes/text: {preview!r}")
 
-
-def _find_file_id_in_public_folder(folder_url: str, filename: str) -> Optional[str]:
-    if not folder_url:
-        return None
-
-    response = requests.get(folder_url, timeout=60)
-    response.raise_for_status()
-    html = response.text
-    ids_to_skip = set(re.findall(r"/folders/([A-Za-z0-9_-]+)", folder_url))
-
-    for match in re.finditer(re.escape(filename), html):
-        window = html[max(0, match.start() - 1200): match.end() + 1200]
-        direct = re.search(r"/file/d/([A-Za-z0-9_-]+)", window)
-        if direct and direct.group(1) not in ids_to_skip:
-            return direct.group(1)
-
-        ids = re.findall(r'["\\]([A-Za-z0-9_-]{20,})["\\]', window)
-        for file_id in ids:
-            if file_id not in ids_to_skip:
-                return file_id
-
-    return None
-
-
-def _download_archive_from_manifest(key: str, archive_path: Path) -> None:
-    manifest = _load_manifest()
-    datasets = manifest.get("datasets", {})
-    spec = datasets.get(key, {})
-    archive_name = DATASETS[key]["archive"]
-
-    env_prefix = re.sub(r"[^A-Z0-9]+", "_", key.upper()).strip("_")
-    env_url = os.environ.get(f"BR2IDGE_{env_prefix}_ZIP_URL")
-    env_id = os.environ.get(f"BR2IDGE_{env_prefix}_ZIP_ID")
-
-    if env_id:
-        print(f"[datasets] Downloading {archive_name} from Google Drive id in BR2IDGE_{env_prefix}_ZIP_ID...")
-        _download_drive_file(env_id, archive_path)
-        return
-
-    url = env_url or spec.get("url") or spec.get("drive_url")
-    file_id = spec.get("file_id") or _extract_file_id(str(url or ""))
-    if file_id:
-        print(f"[datasets] Downloading {archive_name} from configured Google Drive file id...")
-        _download_drive_file(file_id, archive_path)
-        return
-
-    if url:
-        print(f"[datasets] Downloading {archive_name} from configured URL...")
-        _download_url(url, archive_path)
-        return
-
-    folder_url = (
-        os.environ.get("BR2IDGE_DATASETS_DRIVE_FOLDER_URL")
-        or manifest.get("folder_url")
-        or DEFAULT_DRIVE_FOLDER_URL
-    )
-    print(f"[datasets] Looking for {archive_name} in Google Drive folder...")
-    found_id = _find_file_id_in_public_folder(folder_url, archive_name)
-    if not found_id:
+    if not extracted:
         raise RuntimeError(
-            f"Could not locate '{archive_name}' in the configured Google Drive folder. "
-            f"Make the folder public, set file_id/url in {_manifest_path()}, or place the zip in data/_archives/."
+            f"Zenodo bundle did not contain any .zip files. URL: {ZENODO_FILES_ARCHIVE_URL}"
         )
-    _download_drive_file(found_id, archive_path)
+
+
+def _ensure_archive_from_zenodo(archive_path: Path) -> None:
+    """
+    Make sure `archive_path` (e.g. data/_archives/ml-25m.zip) exists, fetching it
+    from Zenodo if needed. Downloading the bundle populates every per-dataset
+    archive at once, so this is a no-op after the first successful call.
+    """
+    if _looks_like_zip(archive_path):
+        return
+
+    _download_zenodo_bundle_and_extract_archives(archive_path.parent)
+
+    if not _looks_like_zip(archive_path):
+        raise RuntimeError(
+            f"After downloading the Zenodo bundle, the expected archive "
+            f"'{archive_path.name}' was not found in {archive_path.parent}. "
+            f"Check that the Zenodo record contains a file named '{archive_path.name}'."
+        )
 
 
 def ensure_dataset(name: str) -> Path:
@@ -365,7 +280,7 @@ def ensure_dataset(name: str) -> Path:
             pass
     if archive is None:
         archive = _data_root() / "_archives" / archive_name
-        _download_archive_from_manifest(key, archive)
+        _ensure_archive_from_zenodo(archive)
 
     print(f"[datasets] Extracting {archive.name} -> {target_dir}")
     tmp_dir = _safe_extract_zip(archive, _data_root())
