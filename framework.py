@@ -1628,7 +1628,10 @@ def main(args):
             current_fold = run_idx - 1
             print(f"[main] Splitting dataset for fold {current_fold} (run {run_idx})...")
             
-            num_folds_val = int(dl_params.get("num_folds", 3))
+            num_folds_cfg = int(dl_params.get("num_folds", 3))
+            num_folds_val = max(num_folds_cfg, n_runs)
+            if num_folds_val != num_folds_cfg:
+                print(f"[split] num_folds ({num_folds_cfg}) < n_runs ({n_runs}); bumping num_folds to {num_folds_val} so every run gets a distinct fold.")
             mode_val = dl_params.get("split_mode", "linear")
             if mode_val not in {"linear", "density", "log"}:
                 print(f"[split] Warning: invalid split_mode='{mode_val}'. Using 'linear'.")
