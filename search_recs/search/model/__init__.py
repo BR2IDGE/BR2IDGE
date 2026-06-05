@@ -2,6 +2,8 @@ __all__ = [
     "BiEncoderSearchModel",
     "BM25Model",
     "DenseRetrieverModel",
+    "SpladeKnnModel", 
+    "ColBERTModel"
 ]
 
 def __getattr__(name):
@@ -14,4 +16,10 @@ def __getattr__(name):
     if name == "DenseRetrieverModel":
         from .retriever_dense import DenseRetrieverModel
         return DenseRetrieverModel
+    if name == "SpladeKnnModel":
+        from .knnsplade import SpladeKnnModel
+        return SpladeKnnModel
+    if name == "ColBERTModel":
+        from .colbert import ColBERTModel
+        return ColBERTModel
     raise AttributeError(name)

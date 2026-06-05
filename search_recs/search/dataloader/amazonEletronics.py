@@ -8,29 +8,25 @@ import os
 import random as r
 from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Iterator
 from sklearn.model_selection import train_test_split
 import polars as pl  # Used for efficient processing of large rating datasets
 
 from .base_dataloader import BaseSearchDatasetBuilder, BuildConfig
+from search_recs.datasets import ensure_dataset
 
 class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
-    META_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz"
-    RATINGS_URL = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/categoryFilesSmall/Electronics.csv"
-
     def __init__(self, cfg: BuildConfig, dataset_name="amazon_electronics", **kwargs):
         super().__init__(cfg)
         self.dataset_name = dataset_name
         self.cfg = cfg
-        self.task = kwargs.get("mode", "normal")  # Selects 'normal' or 'hybrid' mode
+        self.task = kwargs.get("mode", "hybrid")  # Selects 'normal' or 'hybrid' mode
         
         if cfg.random_state is not None:
             r.seed(cfg.random_state)
             np.random.seed(cfg.random_state)
         
-        project_root = Path(__file__).resolve().parents[3]
-        self.dataset_dir = project_root / "data" / dataset_name
-        self.dataset_dir.mkdir(parents=True, exist_ok=True)
+        self.dataset_dir = ensure_dataset("amazonElectronics")
         
         self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
         self.ratings_path = self.dataset_dir / "ratings.csv"
@@ -43,8 +39,11 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             shutil.copyfileobj(resp, f)
 
     def load_search_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        self._download_file(self.META_URL, self.meta_path)
-        df_meta = self.build_pairs()
+        if not self.meta_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
+            self.ratings_path = self.dataset_dir / "ratings.csv"
+        df_meta = self.build_pairs(include_category_tags_in_document=self.task == "hybrid")
 
         if self.task == "hybrid":
             print("Hybrid strategy selected.")
@@ -114,7 +113,9 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             except Exception as e:
                 print(f"[AmazonLoader] Error loading cache: {e}. Regenerating...")
 
-        self._download_file(self.RATINGS_URL, self.ratings_path)
+        if not self.ratings_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.ratings_path = self.dataset_dir / "ratings.csv"
         print("[AmazonLoader] Building Hybrid Dataset (Centroid)... This may take time on the first run.")
 
         # 1. Load interactions using Polars for performance efficiency
@@ -186,7 +187,9 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
     def load_raw(self) -> None:
         """Ensures the file exists."""
-        self._download_file(self.META_URL, self.meta_path)
+        if not self.meta_path.exists():
+            self.dataset_dir = ensure_dataset("amazonElectronics")
+            self.meta_path = self.dataset_dir / "meta_Electronics.json.gz"
 
     def _clean_description(self, desc_raw) -> str:
         if isinstance(desc_raw, list):
@@ -210,7 +213,32 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                 unique_cats.add(cat_chain)
         return list(unique_cats)
 
-    def build_pairs(self) -> pd.DataFrame:
+    def _format_category_tags(self, categories: List[str]) -> str:
+        clean_categories = [
+            str(cat).strip()
+            for cat in categories
+            if str(cat).strip()
+        ]
+        return " ".join(sorted(set(clean_categories), key=str.lower))
+
+    def _iter_metadata_lines(self) -> Iterator[str]:
+        with gzip.open(self.meta_path, 'rt', encoding='utf-8', errors='ignore') as f:
+            while True:
+                try:
+                    line = f.readline()
+                except EOFError as e:
+                    print(
+                        "[AmazonLoader] Warning: gzip stream ended without a valid "
+                        f"end-of-stream marker ({e}). Continuing with records read so far."
+                    )
+                    break
+
+                if not line:
+                    break
+
+                yield line
+
+    def build_pairs(self, include_category_tags_in_document: bool = False) -> pd.DataFrame:
         """
         Reads Metadata file line by line.
         Generates (Query=Category, Doc=Product) pairs.
@@ -226,50 +254,54 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         printed_example = False 
 
         try:
-            with gzip.open(self.meta_path, 'rt', encoding='utf-8') as f:
-                for line in tqdm(f, desc="Generating Query-Doc Pairs"):
-                    try:
-                        row = json.loads(line)
-                        
-                        # DEBUG PRINT OF RAW DATA
-                        if not printed_example:
-                            print("\n" + "="*60)
-                            print("[DEBUG] EXAMPLE OF RAW METADATA OBJECT:")
-                            print(json.dumps(row, indent=4))
-                            print("="*60 + "\n")
-                            printed_example = True
+            for line in tqdm(self._iter_metadata_lines(), desc="Generating Query-Doc Pairs"):
+                try:
+                    row = json.loads(line)
+                    
+                    # DEBUG PRINT OF RAW DATA
+                    if not printed_example:
+                        print("\n" + "="*60)
+                        print("[DEBUG] EXAMPLE OF RAW METADATA OBJECT:")
+                        print(json.dumps(row, indent=4))
+                        print("="*60 + "\n")
+                        printed_example = True
 
-                        asin = row.get("asin")
-                        title = row.get("title", "").strip()
-                        desc = self._clean_description(row.get("description", []))
-                        categories = self._extract_categories(row.get("category", []))
-                        
-                        if not asin or not title or not categories:
-                            continue
-                            
-                        if desc:
-                            document_text = f"{title}. {desc}"
-                        else:
-                            document_text = title
-                        
-                        # --- Core Logic ---
-                        # Ensures that if a product belongs to the "Camera" category,
-                        # it is added to the document list for that query.
-                        for cat in categories:
-                            records.append({
-                                "search_query": cat,
-                                "document": document_text,
-                                "document_id": asin,
-                                "category": "Metadata-Category"
-                            })
-                        
-                        count += 1
-                        if MAX_PRODUCTS_TO_PROCESS and count >= MAX_PRODUCTS_TO_PROCESS:
-                            print(f"[AmazonLoader] Limit of {MAX_PRODUCTS_TO_PROCESS} products reached.")
-                            break
-                            
-                    except (ValueError, json.JSONDecodeError):
+                    asin = row.get("asin")
+                    title = str(row.get("title", "") or "").strip()
+                    desc = self._clean_description(row.get("description", []))
+                    categories = self._extract_categories(row.get("category", row.get("categories", [])))
+                    
+                    if not asin or not title or not categories:
                         continue
+                        
+                    if desc:
+                        document_text = f"{title}. {desc}"
+                    else:
+                        document_text = title
+
+                    category_tag_text = self._format_category_tags(categories)
+                    if include_category_tags_in_document and category_tag_text:
+                        document_text = f"{document_text}. {category_tag_text}"
+                    category_value = category_tag_text if include_category_tags_in_document else "Metadata-Category"
+                    
+                    # --- Core Logic ---
+                    # Ensures that if a product belongs to the "Camera" category,
+                    # it is added to the document list for that query.
+                    for cat in categories:
+                        records.append({
+                            "search_query": cat,
+                            "document": document_text,
+                            "document_id": asin,
+                            "category": category_value
+                        })
+                    
+                    count += 1
+                    if MAX_PRODUCTS_TO_PROCESS and count >= MAX_PRODUCTS_TO_PROCESS:
+                        print(f"[AmazonLoader] Limit of {MAX_PRODUCTS_TO_PROCESS} products reached.")
+                        break
+                        
+                except (ValueError, json.JSONDecodeError):
+                    continue
                         
         except Exception as e:
             print(f"[AmazonLoader] Read error: {e}")
@@ -368,6 +400,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
 # Entry Point
 def get_loader(cfg: BuildConfig, **kwargs):
-    dataset_name = kwargs.pop("dataset_name", "amazon_electronics_meta")
+    dataset_name = kwargs.pop("path", kwargs.pop("dataset_name", "amazonElectronics"))
     loader = AmazonSearchDataLoader(cfg, dataset_name=dataset_name, **kwargs)
     return loader.load_search_data()

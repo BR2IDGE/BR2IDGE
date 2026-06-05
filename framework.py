@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import sys
 import importlib
@@ -205,6 +206,35 @@ def _is_hybrid_retrieval_as_user(exp_config: dict, task_type: str) -> bool:
     s = re.sub(r"-+", "-", s)
 
     return s in { "retrieval-as-user", "retrievalasuser", "retrieval-asuser", "retrieval-as-user", "retrieval-as-user ", }
+
+
+_SEARCH_HYBRID_STRATEGIES = {"centroid-vector", "tag-query"}
+
+
+def _norm_search_hybrid_strategy(s: str) -> str:
+    s = str(s or "").strip().lower()
+    s = re.sub(r"[\s_]+", "-", s)
+    s = re.sub(r"-+", "-", s)
+    s = s.replace("querry", "query")
+    return s
+
+
+def _inject_search_hybrid_task(real_model_config: dict, exp_config: dict, task_type: str) -> dict:
+    if task_type != "search":
+        return real_model_config
+    exp_cfg = exp_config or {}
+    if not bool(exp_cfg.get("hybrid", False)):
+        return real_model_config
+    strategy = exp_cfg.get("hybridStrategie", exp_cfg.get("hybridStrategy", ""))
+    norm = _norm_search_hybrid_strategy(str(strategy))
+    if norm not in _SEARCH_HYBRID_STRATEGIES:
+        if norm:
+            print(f"[model] Warning: unrecognized hybridStrategy '{strategy}' for search. Valid: {sorted(_SEARCH_HYBRID_STRATEGIES)}")
+        return real_model_config
+    config = copy.deepcopy(real_model_config)
+    config.setdefault("parameters", {})["task"] = "hybrid"
+    print(f"[model] Hybrid search: hybridStrategy='{norm}' → injecting task='hybrid' into model parameters")
+    return config
 
 
 def _norm_key_simple(s: str) -> str:
@@ -1111,11 +1141,19 @@ def run_preprocess(task_type, ds_cfg, dataset_key, splits_path, force_preprocess
         loader_entry = get_dataloader_entry(dataset_key, task_type)
 
     if task_type == "search":
+        exp_cfg = exp_config or {}
+        if bool(exp_cfg.get("hybrid", False)):
+            strategy = exp_cfg.get("hybridStrategie", exp_cfg.get("hybridStrategy", ""))
+            norm = _norm_search_hybrid_strategy(str(strategy))
+            if norm in _SEARCH_HYBRID_STRATEGIES:
+                dl_params = {**dl_params, "mode": "hybrid"}
+                print(f"[preprocess] Hybrid search: hybridStrategy='{norm}' → overriding dataloader mode to 'hybrid'")
+
         from search_recs.search.dataloader.base_dataloader import BuildConfig
         seed = int(dl_params.get("seed", 0))
         h_train = _opt_int(dl_params.get("head_train"))
         h_test = _opt_int(dl_params.get("head_test"))
-        
+
         build_cfg = BuildConfig(
             test_size=dl_params.get("test_size", 0.3),
             val_size=dl_params.get("val_size", 0.1),
@@ -1506,11 +1544,19 @@ def main(args):
     tests = tests if isinstance(tests, list) else []
 
     wants_stats = (len(model_names_queue) > 1) and (len(tests) > 0)
+    tests_norm = {
+        str(t).lower().strip().replace("-", "_").replace(" ", "_")
+        for t in tests
+    }
+    has_wilcoxon = "wilcoxon" in tests_norm
+    has_ttest = bool({"ttest", "t_test", "paired_ttest"} & tests_norm)
 
     n_runs_user = exec_conf.get("n_runs", None)
     if n_runs_user is None:
-        if wants_stats and any(str(t).lower() == "wilcoxon" for t in tests):
+        if wants_stats and has_wilcoxon:
             n_runs = 6
+        elif wants_stats and has_ttest:
+            n_runs = 2
         else:
             n_runs = 1
     else:
@@ -1518,9 +1564,12 @@ def main(args):
 
     window_size_val = float(exec_conf.get("window_size", 0.05))
 
-    if wants_stats and any(str(t).lower() == "wilcoxon" for t in tests) and n_runs < 6:
+    if wants_stats and has_wilcoxon and n_runs < 6:
         print(f"[stats] Warning: Wilcoxon requires multiple runs. Adjusting n_runs: {n_runs} -> 6")
         n_runs = 6
+    elif wants_stats and has_ttest and n_runs < 2:
+        print(f"[stats] Warning: Paired t-test requires at least 2 runs. Adjusting n_runs: {n_runs} -> 2")
+        n_runs = 2
 
     if n_runs < 1:
         n_runs = 1
@@ -1533,22 +1582,22 @@ def main(args):
     exp_context_dir.mkdir(parents=True, exist_ok=True)
     splits_path = exp_context_dir / "splits.pkl"
 
-    # Capture the output of preprocess
-    train_data, val_data, test_data = run_preprocess(
-        task_type,
-        ds_cfg,
-        dataset_key,
-        splits_path,
-        force_preprocess=("preprocess" in force),
-        no_save=("preprocess" in no_save),
-        skip_preprocess=("preprocess" in skip),
-      exp_config=exp_config,
-)
-
     full_recs_data = None
+    train_data = val_data = test_data = None
+
     if task_type == "recs":
-        full_recs_data = train_data 
-        train_data = None 
+        train_data, val_data, test_data = run_preprocess(
+            task_type,
+            ds_cfg,
+            dataset_key,
+            splits_path,
+            force_preprocess=("preprocess" in force),
+            no_save=("preprocess" in no_save),
+            skip_preprocess=("preprocess" in skip),
+            exp_config=exp_config,
+        )
+        full_recs_data = train_data
+        train_data = None
         test_data = None
 
     print(f"[data] Loaded shapes: Train={_safe_len(train_data)}, Test={_safe_len(test_data)}, FullRecs={_safe_len(full_recs_data)}")
@@ -1560,11 +1609,29 @@ def main(args):
         print(f"[RUN] {run_idx}/{n_runs}  run_id={run_id}  run_seed={run_seed}")
         print(f"{'=' * 80}\n")
 
+        if task_type == "search":
+            print(f"[main] Generating search splits for run {run_idx} (random_state={run_seed})...")
+            ds_cfg.setdefault("dataloader", {})["seed"] = run_seed
+            train_data, val_data, test_data = run_preprocess(
+                task_type,
+                ds_cfg,
+                dataset_key,
+                splits_path=None,
+                force_preprocess=True,
+                no_save=True,
+                skip_preprocess=False,
+                exp_config=exp_config,
+            )
+            print(f"[main] Search split complete. Train={_safe_len(train_data)}, Val={_safe_len(val_data)}, Test={_safe_len(test_data)}")
+
         if task_type == "recs":
             current_fold = run_idx - 1
             print(f"[main] Splitting dataset for fold {current_fold} (run {run_idx})...")
             
-            num_folds_val = int(dl_params.get("num_folds", 3))
+            num_folds_cfg = int(dl_params.get("num_folds", 3))
+            num_folds_val = max(num_folds_cfg, n_runs)
+            if num_folds_val != num_folds_cfg:
+                print(f"[split] num_folds ({num_folds_cfg}) < n_runs ({n_runs}); bumping num_folds to {num_folds_val} so every run gets a distinct fold.")
             mode_val = dl_params.get("split_mode", "linear")
             if mode_val not in {"linear", "density", "log"}:
                 print(f"[split] Warning: invalid split_mode='{mode_val}'. Using 'linear'.")
@@ -1591,6 +1658,7 @@ def main(args):
             md_cfg_path, _ = resolve_model_config(model_entry, base_path)
             md_cfg = json.loads(md_cfg_path.read_text(encoding="utf-8"))
             real_model_config = md_cfg.get("model", md_cfg)
+            real_model_config = _inject_search_hybrid_task(real_model_config, exp_config, task_type)
             full_config = {**ds_cfg, **md_cfg, "experiment": exp_config}
 
             base_run_dir = prepare_run_dir(exp_config, ds_cfg, md_cfg, dataset_key, current_model_name)
@@ -1637,7 +1705,8 @@ def main(args):
 
             alpha = float(stats_conf.get("alpha", 0.05))
             symbol = stats_conf.get("symbol", "\u25B2")
-            min_runs = int(stats_conf.get("min_runs", 6))
+            default_min_runs = 6 if has_wilcoxon else (2 if has_ttest else 1)
+            min_runs = int(stats_conf.get("min_runs", default_min_runs))
 
             run_significance_analysis(metrics_dir=metrics_dir, experiment_name=experiment_name, model_pairs=model_pairs, tests=tests, alpha=alpha, symbol=symbol, min_runs=min_runs)
         except ImportError as e:

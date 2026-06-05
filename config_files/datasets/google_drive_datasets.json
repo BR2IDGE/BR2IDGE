@@ -1,0 +1,25 @@
+{
+  "folder_url": "https://drive.google.com/drive/folders/1c8gLAue8Vp-b9KM93RQwh7tHAAonEgF5?usp=sharing",
+  "datasets": {
+    "ml-25m": {
+      "archive": "ml-25m.zip",
+      "file_id": "",
+      "url": ""
+    },
+    "amazonElectronics": {
+      "archive": "amazonElectronics.zip",
+      "file_id": "",
+      "url": ""
+    },
+    "lastfm-dataset-360K": {
+      "archive": "lastfm-dataset-360K.zip",
+      "file_id": "",
+      "url": ""
+    },
+    "lastfm-hybrid": {
+      "archive": "lastfm-hybrid.zip",
+      "file_id": "",
+      "url": ""
+    }
+  }
+}

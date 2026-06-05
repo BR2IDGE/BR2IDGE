@@ -1,0 +1,19 @@
+{
+  "model": {
+    "model_name": "ColBERTModel",
+    "name": "ColBERTModel",
+    "parameters": {
+      "backbone": "bert-base-uncased",
+      "dim": 128,
+      "query_maxlen": 32,
+      "doc_maxlen": 180,
+      "batch_size": 32,
+      "task": "normal",
+      "filter_punctuation": true,
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "dataset_path": "./data/ml-25m"
+    }
+  }
+}

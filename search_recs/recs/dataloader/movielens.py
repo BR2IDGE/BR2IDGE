@@ -1,15 +1,12 @@
 import os
-import zipfile
-import urllib.request
 import copy
 from pathlib import Path
 import polars as pl
 import pandas as pd
 
 from search_recs.recs.dataloader import RecsDataLoader
+from search_recs.datasets import ensure_dataset
 
-MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
-ZIP_FILENAME = "ml-25m.zip"
 EXTRACTED_FOLDER = "ml-25m"
 
 class MovieLens25MDataLoader(RecsDataLoader):
@@ -37,29 +34,9 @@ class MovieLens25MDataLoader(RecsDataLoader):
         # 5. Local setup
         cwd = Path(os.getcwd())
         self.data_root_path = cwd / "data"
-        
-        # Define dataset path as ./data/ml-25m
-        self.dataset_path = self.data_root_path / EXTRACTED_FOLDER 
-        self.MOVIELENS_URL = MOVIELENS_25M_URL
-        self.ZIP_FILENAME = ZIP_FILENAME
+
+        self.dataset_path = ensure_dataset("ml-25m")
         self.sample_fraction = sample_fraction
-
-        # Ensure download
-        if not self.dataset_path.is_dir():
-            self._download_and_extract()
-        
-    def _download_and_extract(self):
-        zip_path = self.data_root_path / self.ZIP_FILENAME
-        os.makedirs(self.data_root_path, exist_ok=True)
-
-        # Silent download
-        urllib.request.urlretrieve(self.MOVIELENS_URL, zip_path)
-
-        # Silent extraction
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(self.data_root_path)
-
-        os.remove(zip_path)
 
     # ---------------------------------------------------------
     # MODE 1: Ratings (Original)

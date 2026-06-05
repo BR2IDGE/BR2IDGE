@@ -9,10 +9,7 @@
 
   "model":[ 
     {
-      "name": "LightFMModel"
-    },
-    {
-      "name": "DeepFMModel"
+      "name": "Bert4REC"
     }
   ],
 
@@ -20,7 +17,7 @@
     "skip": [],
     "force": [],
     "no_save": [],
-    "n_runs": 3,
+    "n_runs": 1,
     "window_size": 0.05
   },
   

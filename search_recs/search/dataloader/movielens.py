@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from .base_dataloader import BaseSearchDatasetBuilder, BuildConfig
 import numpy as np
 import time
+from search_recs.datasets import ensure_dataset
 
 # -------------------------------------------------------------------------
 # BUILD AND LOADING CLASSES
@@ -200,7 +201,7 @@ class MovieLensDataLoader:
         return pd.DataFrame(rows)
 
     def _split_and_sample(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        rs = 48  # Can be None
+        rs = self.cfg.random_state if self.cfg.random_state is not None else self._runtime_seed()
 
         train_val, test_df = train_test_split(
             df,
@@ -264,9 +265,21 @@ class MovieLensDataLoader:
 
         ratings = pd.read_csv(self.base_path / "ratings.csv")
         movies = pd.read_csv(self.base_path / "movies.csv")
+        genome_tags = pd.read_csv(self.base_path / "genome-tags.csv")
+        genome_scores = pd.read_csv(self.base_path / "genome-scores.csv")
 
-        # Document corpus
-        movies["document"] = movies.apply(MovieLensBuilder.create_movie_document, axis=1)
+        min_relevance = 0.9
+
+        genome_scores = genome_scores[genome_scores["relevance"] >= min_relevance].copy()
+        genome_data = genome_scores.merge(genome_tags, on="tagId", how="left")
+
+        tag_agg = genome_data.groupby("movieId")["tag"].agg(list).reset_index()
+        movies = movies.merge(tag_agg, on="movieId", how="left")
+
+        movies["document"] = movies.apply(
+            lambda r: MovieLensBuilder.create_movie_document(r, include_tags=True),
+            axis=1,
+        )
         corpus_lookup = movies[["movieId", "document"]].rename(columns={"movieId": "document_id"})
         corpus_lookup["document_id"] = corpus_lookup["document_id"].astype(int)
 
@@ -336,7 +349,7 @@ def load_movielens_dataset(cfg: BuildConfig, dataset_path: str = "./data/ml-25m"
     Automatic selector: determines mode based on 'mode' parameter (default: search).
     """
     mode = kwargs.get("mode", "normal")
-    base_path = pathlib.Path(dataset_path)
+    base_path = ensure_dataset("ml-25m")
     
     # Path fallbacks
     if not base_path.exists():

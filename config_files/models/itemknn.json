@@ -1,0 +1,43 @@
+{
+  "model": {
+    "model_type": "ItemKNNModel",
+    "model_name": "itemknn",
+    "parameters": {
+      "similarity_metric": "cosine",
+      "cosine_variant": "auto",
+      "k_neighbors": 200,
+      "as_binary": "auto",
+      "as_similar_first": true,
+      "use_weighted_ratings": "auto",
+      "normalize_scores": "auto",
+      "exclude_seen_items": true,
+      "fallback_on_empty_neighbors": false,
+      "center_ratings": true,
+      "min_similarity": 0.02,
+      "positive_threshold": "auto",
+      "shrinkage": 20.0,
+      "cold_start_score": "popularity",
+      "user_col": "user",
+      "item_col": "item",
+      "label_col": "label"
+    }
+  },
+  "evaluation": {
+    "evaluator": "EvaluatorRecsManager",
+    "metrics": [
+      "NDCG",
+      "MAP",
+      "MRR",
+      "PRECISION",
+      "RECALL"
+    ],
+    "top_ks": [
+      1,
+      5,
+      10,
+      20,
+      30,
+      50
+    ]
+  }
+}

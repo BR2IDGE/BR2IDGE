@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from search_recs.datasets import ensure_dataset
 
 try:
     from search_recs.recs.dataloader import RecsDataLoader
@@ -322,28 +323,12 @@ def _make_bm25_model(bm25_config: Dict[str, Any], dataset_path: Optional[Path] =
 
 
 def _download_movielens_25m_if_needed(dataset_dir: Path) -> Path:
-    import os
-    import zipfile
-
-    MOVIELENS_25M_URL = "https://files.grouplens.org/datasets/movielens/ml-25m.zip"
-    ZIP_FILENAME = "ml-25m.zip"
     EXTRACTED_FOLDER = "ml-25m"
-
-    base = Path(dataset_dir)
-
-    if base.name != EXTRACTED_FOLDER and (base / EXTRACTED_FOLDER).exists():
-        base = base / EXTRACTED_FOLDER
-
-    if base.name != EXTRACTED_FOLDER and base.exists():
-        cand = base / EXTRACTED_FOLDER
-        if cand != base:
-            base = cand
-
-    base.mkdir(parents=True, exist_ok=True)
 
     def _has_required(p: Path) -> bool:
         return (p / "genome-tags.csv").exists() and (p / "genome-scores.csv").exists() and (p / "movies.csv").exists()
 
+    base = Path(dataset_dir)
     if _has_required(base):
         return base
 
@@ -351,37 +336,12 @@ def _download_movielens_25m_if_needed(dataset_dir: Path) -> Path:
     if _has_required(nested):
         return nested
 
-    zip_path = base.parent / ZIP_FILENAME
-    if not zip_path.exists():
-        print(f"[RetrievalAsUser][MovieLens] Downloading ML-25M -> {zip_path}")
-        try:
-            import urllib.request
-            urllib.request.urlretrieve(MOVIELENS_25M_URL, zip_path)
-        except Exception as e:
-            raise RuntimeError(f"[RetrievalAsUser][MovieLens] Failed to download ml-25m.zip: {e}")
-
-    print(f"[RetrievalAsUser][MovieLens] Extracting -> {base.parent}")
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(base.parent)
-    except Exception as e:
-        raise RuntimeError(f"[RetrievalAsUser][MovieLens] Failed to extract ml-25m.zip: {e}")
-
-    try:
-        os.remove(zip_path)
-    except Exception:
-        pass
-
-    std = base.parent / EXTRACTED_FOLDER
-    if _has_required(std):
-        return std
-
-    std_nested = std / EXTRACTED_FOLDER
-    if _has_required(std_nested):
-        return std_nested
+    ensured = ensure_dataset("ml-25m")
+    if _has_required(ensured):
+        return ensured
 
     raise FileNotFoundError(
-        f"[RetrievalAsUser][MovieLens] Download/extract completed but required files were not found under {std}."
+        f"[RetrievalAsUser][MovieLens] Required files were not found under {base} or {ensured}."
     )
 
 
@@ -524,7 +484,14 @@ def _load_amazon_category_search_dataset(
             print(f"[RetrievalAsUser][Amazon] Warning: failed to read cache {cache_fp}: {e} (rebuilding...)")
 
     meta_fp = dataset_path / str(meta_file)
-    _download_with_progress(meta_url, meta_fp)
+    if not meta_fp.exists():
+        dataset_path = ensure_dataset("amazonElectronics")
+        meta_fp = dataset_path / str(meta_file)
+    if not meta_fp.exists():
+        if meta_url:
+            _download_with_progress(meta_url, meta_fp)
+        else:
+            raise FileNotFoundError(f"[RetrievalAsUser][Amazon] Metadata file not found: {meta_fp}")
 
     import gzip
 
@@ -751,7 +718,18 @@ def _find_first(root: Path, filename: str) -> Optional[Path]:
     return None
 
 
+def _lastfm_hetrec_path(dataset_path: Path) -> Path:
+    root = Path(dataset_path)
+    if _find_first(root, "tags.dat") and _find_first(root, "user_taggedartists.dat") and _find_first(root, "artists.dat"):
+        return root
+    return ensure_dataset("lastfm-hybrid")
+
+
 def _download_hetrec_2k_if_needed(dataset_path: Path, url: str) -> None:
+    canonical = ensure_dataset("lastfm-hybrid")
+    if canonical.exists():
+        return
+
     tags_fp = _find_first(dataset_path, "tags.dat")
     uta_fp = _find_first(dataset_path, "user_taggedartists.dat")
     art_fp = _find_first(dataset_path, "artists.dat")
@@ -802,6 +780,7 @@ def _download_hetrec_2k_if_needed(dataset_path: Path, url: str) -> None:
 
 
 def _load_hetrec_2k_tables(dataset_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    dataset_path = _lastfm_hetrec_path(dataset_path)
     tags_fp = _find_first(dataset_path, "tags.dat")
     uta_fp = _find_first(dataset_path, "user_taggedartists.dat")
     art_fp = _find_first(dataset_path, "artists.dat")
@@ -1018,9 +997,9 @@ class RetrievalAsUserConfig:
     max_profile_items: int = 50
 
     min_tag_interactions: int = 0
-    hetr_ec_tags_url: str = "http://files.grouplens.org/datasets/hetrec2011/hetrec2011-lastfm-2k.zip"
+    hetr_ec_tags_url: str = ""
 
-    amazon_meta_url: str = "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz"
+    amazon_meta_url: str = ""
     amazon_meta_file: str = "meta_Electronics.json.gz"
     amazon_max_products: int = 200000
     amazon_cache_pairs: str = "amazon_search_pairs.parquet"
@@ -1037,7 +1016,15 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
         super().__init__(dl)
 
         self.cfg = self._parse_cfg(dl)
-        self.dataset_path = _resolve_dataset_path(self.cfg.path)
+        mode = str(self.cfg.mode).lower().strip()
+        if mode == "movielens_genome":
+            self.dataset_path = ensure_dataset("ml-25m")
+        elif mode in {"amazon_category", "amazon_electronics", "amazon"}:
+            self.dataset_path = ensure_dataset("amazonElectronics")
+        elif mode == "tag_query":
+            self.dataset_path = ensure_dataset("lastfm-dataset-360K")
+        else:
+            self.dataset_path = _resolve_dataset_path(self.cfg.path)
 
         print(f"[RetrievalAsUser] dataset_path: {self.dataset_path} | mode={self.cfg.mode}")
 
@@ -1082,14 +1069,14 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             hetr_ec_tags_url=str(
                 dl.get(
                     "hetrec_tags_url",
-                    "http://files.grouplens.org/datasets/hetrec2011/hetrec2011-lastfm-2k.zip",
+                    "",
                 )
             ),
 
             amazon_meta_url=str(
                 dl.get(
                     "amazon_meta_url",
-                    "https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_Electronics.json.gz",
+                    "",
                 )
             ),
             amazon_meta_file=str(dl.get("amazon_meta_file", "meta_Electronics.json.gz")),

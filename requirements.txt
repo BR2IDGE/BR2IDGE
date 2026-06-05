@@ -1,7 +1,6 @@
 tqdm==4.66.5
 fsspec[http]==2024.5.0
 scikit-learn==1.4.1.post1
-setuptools==68.2.2
 datasets==2.20.0
 numpy==1.26.4
 pandas==2.2.3
@@ -14,7 +13,6 @@ torchvision==0.23.0
 tensorflow==2.15.1
 keras==2.15.0
 lightfm==1.17
-implicit==0.7.2
 librecommender==1.5.2
 recbole==1.2.1
 faiss-cpu==1.13.2
@@ -24,7 +22,6 @@ transformers==4.53.3
 gensim==4.4.0
 nltk==3.9.1
 pystemmer==2.0.1
-rank-bm25==0.2.2
 bm25s==0.2.12
 retriv==0.2.3
 ir-datasets==0.5.11
@@ -36,9 +33,7 @@ matplotlib==3.10.6
 seaborn==0.13.2
 click==8.3.1
 requests==2.32.3
-beautifulsoup4==4.14.3
-lxml==5.4.0
 optuna==4.7.0
 ray==2.6.3
 tensorboard==2.15.2
-annoy
+annoy==1.17.3

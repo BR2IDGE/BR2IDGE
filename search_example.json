@@ -3,18 +3,15 @@
   "task_type": "search",
   "output_dir": "artifacts",
   "dataset": { 
-    "name": "movielens"
+    "name": "Movielens"
   },
   "model": [
     { 
-      "name": "BM25Model" 
-    },
-    {
-      "name": "BiEncoderSearchModel"
+      "name": "BM25Model"
     }
   ],
   "execution": {
-    "force": ["preprocess", "index", "train"],
+    "force": ["preprocess", "features", "eval", "index", "train"],
     "skip": [],
     "no_save": [],
     "n_runs": 1

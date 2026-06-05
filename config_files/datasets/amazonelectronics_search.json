@@ -5,7 +5,7 @@
     "test_size": 0.15,
     "val_size": 0.15,
     "seed": 42,
-    "mode": "normal",
+    "mode": "hybrid",
     "head_train": null,
     "head_val": null,
     "head_test": null
