@@ -5,7 +5,7 @@
       "pretrained_name": "naver/splade-v3",
       "token_max_length": 128,
       "n_neighbors": 11,
-      "auth_token": "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",
+      "auth_token": "YOUR HF TOKEN",
       "model_dir": "./output/splade_knn",
       "query_col": "search_query",
       "doc_col": "document",

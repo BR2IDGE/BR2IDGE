@@ -21,7 +21,7 @@ Some implemented models shown in the paper include `LightFMModel`, `DeepFMModel`
 
 ## Requirements
 
-* **Python:** 3.9 (Required)
+* **Python:** 3.10 (Required)
 * **OS:** Linux (recommended for large-scale runs), macOS, or Windows.
 * **Compute:**
   * CPU-only runs are fully supported.
@@ -43,6 +43,122 @@ Some implemented models shown in the paper include `LightFMModel`, `DeepFMModel`
    ```bash
    pip install -r requirements.txt
    ```
+
+
+## Datasets
+
+BR2IDGE downloads the benchmark datasets **automatically** the first time you run an
+experiment that needs them. You normally do not have to download anything by hand.
+
+### How automatic download works
+
+When a dataloader is asked for a dataset, the framework (`search_recs/datasets/manager.py`):
+
+1. Checks whether the dataset already exists under `data/<folder>/`. If the required
+   files are present, it is used as-is.
+2. If not, it looks for the dataset's `.zip` archive in (in order):
+   `$BR2IDGE_DATA_ARCHIVE_DIR/`, then `data/_archives/`, then `data/`, then the repo root.
+3. If no archive is found, it downloads the **Zenodo bundle** — a single
+   "zip-of-zips" (~2 GB) that contains every dataset archive — and unpacks each inner
+   `.zip` into `data/_archives/`.
+4. It extracts the matching archive into `data/<folder>/` and verifies the required files.
+
+The four datasets, their archives, and where they are extracted:
+
+| Dataset (config `name`)        | Archive (`.zip`)             | Extracted folder            | Required files |
+| ------------------------------ | ---------------------------- | --------------------------- | -------------- |
+| `movielens` / MovieLens-25M    | `ml-25m.zip`                 | `data/ml-25m/`              | `ratings.csv`, `movies.csv`, `genome-scores.csv`, `genome-tags.csv`, `tags.csv`, `links.csv` |
+| `amazonElectronics`            | `amazonElectronics.zip`      | `data/amazonElectronics/`   | `ratings.csv`, `meta_Electronics.json.gz` |
+| `lastfm` (LastFM-360K, recs)   | `lastfm-dataset-360K.zip`    | `data/lastfm-dataset-360K/` | `usersha1-artmbid-artname-plays.tsv`, `usersha1-profile.tsv` |
+| `lastfm` (HetRec hybrid, search) | `lastfm-hybrid.zip`        | `data/lastfm-hybrid/`       | `artists.dat`, `tags.dat`, `user_taggedartists.dat`, `user_artists.dat` |
+
+### Manual download (if the automatic download fails)
+
+If you are offline, behind a proxy, or the Zenodo download fails, you can fetch the
+archives yourself from either mirror:
+
+* **Zenodo:** https://zenodo.org/records/20492270
+  (download the individual per-dataset `.zip` files, or the full "Download all" bundle)
+* **Google Drive:** https://drive.google.com/drive/u/2/folders/1_Wvj_lLrqrahwi4d8aXC1bSzgz59_7iA
+
+You do **not** need to download every dataset — only the ones your experiments use.
+
+#### Where to put the files
+
+You have two options. **Option A is the easiest** and the recommended one.
+
+**Option A — Drop the `.zip` files into `data/_archives/` (recommended)**
+
+Place the downloaded archives, *without unzipping them*, into the `data/_archives/`
+folder. The framework will detect them and extract them automatically on the next run:
+
+```
+BR2IDGE/
+└── data/
+    └── _archives/
+        ├── ml-25m.zip
+        ├── amazonElectronics.zip
+        ├── lastfm-dataset-360K.zip
+        └── lastfm-hybrid.zip
+```
+
+Keep the archive filenames exactly as listed in the table above. Then just run your
+experiment normally — extraction happens for you.
+
+> Tip: you can keep the archives anywhere and point the framework at that directory with
+> the `BR2IDGE_DATA_ARCHIVE_DIR` environment variable, e.g.
+> `export BR2IDGE_DATA_ARCHIVE_DIR=/path/to/my/archives`.
+
+**Option B — Extract the archives yourself into `data/<folder>/`**
+
+If you prefer to unzip manually, extract each archive so that its **required files sit
+directly inside** the matching `data/<folder>/` (no extra nested folder). For example,
+for MovieLens-25M the result must be:
+
+```
+BR2IDGE/
+└── data/
+    └── ml-25m/
+        ├── ratings.csv
+        ├── movies.csv
+        ├── genome-scores.csv
+        ├── genome-tags.csv
+        ├── tags.csv
+        └── links.csv
+```
+
+Make sure the files are **directly** under the folder (e.g. `data/ml-25m/ratings.csv`),
+**not** double-nested (`data/ml-25m/ml-25m/ratings.csv`). If the required files are found,
+the framework skips downloading entirely.
+
+
+## Hugging Face Token (SPLADE)
+
+The SPLADE model (`SpladeKnnModel`) loads pretrained weights (`naver/splade-v3`) from the
+Hugging Face Hub. Because this model is gated, you must supply a Hugging Face access token
+before running any SPLADE experiment.
+
+1. Create a (free) account at https://huggingface.co and accept the model terms on the
+   model page: https://huggingface.co/naver/splade-v3
+2. Generate a **read** token at https://huggingface.co/settings/tokens
+3. Open `config_files/models/spladeknn.json` and paste your token into the `auth_token`
+   field (replacing the `YOUR HF TOKEN` placeholder):
+
+   ```json
+   {
+     "model": {
+       "model_type": "SpladeKnnModel",
+       "parameters": {
+         "pretrained_name": "naver/splade-v3",
+         "auth_token": "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+         "...": "..."
+       }
+     }
+   }
+   ```
+
+>The token is your personal credential — do not commit it to a public repository.
+> Only `SpladeKnnModel` requires it; the other models run without a Hugging Face token.
 
 
 ## Configs
