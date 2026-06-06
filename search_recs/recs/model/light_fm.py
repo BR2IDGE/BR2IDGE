@@ -5,11 +5,6 @@ from lightfm import LightFM
 from search_recs.recs.model import BaseRecsModel
 
 class LightFMModel(BaseRecsModel):
-    """
-    LightFM Wrapper compatible with the Framework.
-    Ensures score return for ALL test pairs (including cold-start).
-    """
-
     def __init__(self, model_config: dict, features_config: dict):
         super().__init__(model_config)
 
@@ -102,28 +97,20 @@ class LightFMModel(BaseRecsModel):
         print("[LightFM] Training finished.")
 
     def prediction(self, test_data: pd.DataFrame) -> tuple:
-        """
-        Returns scores for ALL items in test_data.
-        Unknowns (Cold Start) receive -inf score.
-        """
         if self.model is None:
             raise RuntimeError("Call fit() before prediction().")
 
         if test_data is None or not isinstance(test_data, pd.DataFrame):
             raise ValueError("Must provide a DataFrame in 'test_data'.")
 
-        # 1. Mapping (generates NaN for unknowns)
         u_map = test_data[self.user_col].astype(str).map(self.user2idx)
         i_map = test_data[self.item_col].astype(str).map(self.item2idx)
 
-        # 2. Result array filled with -inf
         n_samples = len(test_data)
         y_pred = np.full(n_samples, -np.inf, dtype=np.float32)
 
-        # 3. Identify valid indices
         valid_mask = u_map.notna() & i_map.notna()
         
-        # 4. Predict only for valid entries
         if valid_mask.any():
             u_valid = u_map[valid_mask].astype(int).values
             i_valid = i_map[valid_mask].astype(int).values
@@ -135,7 +122,6 @@ class LightFMModel(BaseRecsModel):
             )
             y_pred[valid_mask] = scores
 
-        # 5. Prepare y_true
         if self.label_col in test_data.columns:
             y_true = pd.to_numeric(test_data[self.label_col], errors='coerce').fillna(0.0).tolist()
         else:

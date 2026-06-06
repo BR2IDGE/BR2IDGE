@@ -103,13 +103,6 @@ def _load_profile(dataset_path: Path, user_lookup: pl.DataFrame) -> pl.DataFrame
 
 
 class LastFM360KDataLoader(RecsDataLoader):
-    """
-    Local LastFM 360K dataloader.
-
-    It reads the canonical TSV files stored in data/lastfm-dataset-360K.
-    HetRec tags are still read from data/lastfm-hybrid when hybrid/tag-as-user
-    mode is requested.
-    """
 
     def __init__(self, dataloader_config: dict):
         if not isinstance(dataloader_config, dict):
@@ -129,7 +122,6 @@ class LastFM360KDataLoader(RecsDataLoader):
         self.min_user_interactions = int(cfg.get("min_user_interactions", 2))
 
     def load_data(self) -> pd.DataFrame:
-        """Standard 360K user-artist-playcount loading from local TSV files."""
         plays_lf = _scan_360k_plays(self.dataset_path)
         users = _load_360k_user_lookup(self.dataset_path)
         artists = _load_360k_artist_lookup(self.dataset_path)
@@ -165,7 +157,6 @@ class LastFM360KDataLoader(RecsDataLoader):
         return data.to_pandas()
 
     def hybrid_load_data(self) -> pd.DataFrame:
-        """Tag-as-user mode: maps HetRec tags to local LastFM 360K artists by name."""
         artists_360k = _load_360k_artist_lookup(self.dataset_path).select(
             [
                 pl.col("item").alias("item_360k"),

@@ -25,18 +25,3 @@ class BaseEvaluator(ABC):
             metric (BaseMetric): evaluation metric
         """
         pass
-    
-    # @abstractmethod  
-    # def eval_by_user(self, user: str, metric: BaseMetric) -> float:
-    #     """
-    #     Abstract method that computes the evaluation metric for a user.
-
-    #     Args:
-    #         user (str): user identifier
-    #         metric (BaseMetric): evaluation metrics
-            
-    #     Returns:
-    #         evaluation score.
-    #     """
-    #     pass
-    

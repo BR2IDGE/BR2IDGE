@@ -5,15 +5,11 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 
-# Define the map of model names to LibReco model classes
 MODELS_MAP = {
     "DeepFM": DeepFM
 }
 
 class DeepFMModel(BaseRecsModel):
-    """
-    Concrete implementation for LibReCo models (e.g., DeepFM, BPR, SVD).
-    """
 
     def __init__(self, model_config: dict, features_config: dict):
         tf.compat.v1.reset_default_graph()
@@ -31,9 +27,6 @@ class DeepFMModel(BaseRecsModel):
         print("DeepFM initialized.")
         
     def preprocess(self, train_data: pd.DataFrame, **kwargs):
-        """
-        Builds the LibReco DatasetFeat from the training data.
-        """
         print("LibReCo: Starting preprocessing...")
         self.train_dataset, self.data_info = DatasetFeat.build_trainset(
             train_data, 
@@ -45,9 +38,6 @@ class DeepFMModel(BaseRecsModel):
         print("LibReCo: Preprocessing finished.")
 
     def fit(self):
-        """
-        Configures and trains the LibReco model.
-        """
         print(f"LibReCo: Starting training (fit) for {self.model_name}...")
         
         # Initialize model with parameters
@@ -72,13 +62,10 @@ class DeepFMModel(BaseRecsModel):
         print(f"LibReCo: Training finished.")
 
     def prediction(self, test_data: pd.DataFrame):
-        """
-        Generates predictions for the test dataset using batch processing.
-        """
         # Get true labels
         y_test = test_data['label'].values.astype(np.float32)   
         
-        # Batch prediction (optimized)
+        # Batch prediction
         y_pred = self.model.predict(
             user=test_data['user'].values,
             item=test_data['item'].values

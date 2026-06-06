@@ -18,9 +18,6 @@ META_FILENAME = "meta_Electronics.json.gz"
 DATASET_FOLDER_NAME = "amazonElectronics"
 
 class AmazonElectronicsDataLoader(RecsDataLoader):
-    """
-    DataLoader for Amazon Electronics with auto-download and Tag-as-User support.
-    """
 
     def __init__(self, full_config: dict, sample_fraction: float = 1.0):
         self.config_copy = copy.deepcopy(full_config)
@@ -42,13 +39,11 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
         self.dataset_path.mkdir(parents=True, exist_ok=True)
 
     def _download_file(self, url: str, target_path: Path):
-        """Generic downloader with basic progress log."""
         print(f"Downloading {url}...")
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=120) as resp, open(target_path, "wb") as f:
             shutil.copyfileobj(resp, f)
 
-    # MODE 1: Ratings
     def load_data(self) -> pd.DataFrame:
         """Standard User-Item-Rating loading (Enforcing User-Item order)."""
         csv_path = self.dataset_path / CSV_FILENAME
@@ -110,7 +105,6 @@ class AmazonElectronicsDataLoader(RecsDataLoader):
         print(f"Loaded {df.height:,} interactions (Standard Mode: User-Item ordered).")
         return df.to_pandas()
 
-    # MODE 2: Tag-as-User
     def hybrid_load_data(self) -> pd.DataFrame:
         """Tag-as-User Mode: Categories become Users, ASINs become Items."""
         json_gz_path = self.dataset_path / META_FILENAME

@@ -1,5 +1,3 @@
-# Retrieval-as-User DataLoader for hybrid (search↔recs) experiments.
-
 import json
 import importlib
 from dataclasses import dataclass

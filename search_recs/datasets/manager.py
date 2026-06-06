@@ -7,9 +7,6 @@ from typing import Dict, Iterable, Optional
 
 import requests
 
-
-# Datasets are published as a single Zenodo record. The `files-archive` endpoint
-# returns one outer zip that bundles one .zip per dataset (a "zip of zips").
 ZENODO_RECORD_ID = os.environ.get("BR2IDGE_ZENODO_RECORD_ID", "20492270")
 ZENODO_FILES_ARCHIVE_URL = (
     os.environ.get("BR2IDGE_DATASETS_ZENODO_ARCHIVE_URL")
@@ -164,7 +161,6 @@ def _looks_like_zip(path: Path) -> bool:
 
 
 def _download_file(url: str, dest: Path) -> None:
-    """Stream a URL to `dest`, validating that the result is a real zip."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     response = requests.get(
         url,
@@ -193,16 +189,6 @@ def _download_file(url: str, dest: Path) -> None:
 
 
 def _download_zenodo_bundle_and_extract_archives(archives_dir: Path) -> None:
-    """
-    Download the Zenodo `files-archive` bundle (a zip containing one .zip per
-    dataset) once, and extract every inner .zip into `archives_dir`
-    (i.e. data/_archives/).
-
-    Each extracted file is named exactly like the per-dataset archive expected by
-    DATASETS (e.g. 'ml-25m.zip'), so the normal extraction flow in
-    ensure_dataset() can proceed unchanged. Because the bundle contains every
-    dataset, a single ~2 GB download populates all archives at once.
-    """
     archives_dir.mkdir(parents=True, exist_ok=True)
     bundle_path = archives_dir / "_zenodo_bundle.zip"
 
@@ -216,7 +202,6 @@ def _download_zenodo_bundle_and_extract_archives(archives_dir: Path) -> None:
             for member in zf.infolist():
                 if member.is_dir():
                     continue
-                # Use only the basename to avoid path traversal and any nesting.
                 inner_name = Path(member.filename).name
                 if not inner_name.lower().endswith(".zip"):
                     continue

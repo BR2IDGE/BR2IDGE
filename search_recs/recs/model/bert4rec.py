@@ -44,7 +44,6 @@ class Bert4REC(BaseRecsModel):
         """
         print("[Bert4Rec] Preprocessing data...")
         
-        # 1. Setup temporary directory for RecBole data
         self.data_root = str((Path.cwd() / "recbole_temp").resolve())
         self.dataset_name = f"run_{id(self)}"
         ds_dir = os.path.join(self.data_root, self.dataset_name)
@@ -53,17 +52,14 @@ class Bert4REC(BaseRecsModel):
             shutil.rmtree(ds_dir)
         os.makedirs(ds_dir, exist_ok=True)
         
-        # 2. Identify timestamp column
         time_col = 'time' if 'time' in train_data.columns else 'timestamp'
         
-        # 3. Write .inter file (RecBole requirement)
         inter_path = os.path.join(ds_dir, f"{self.dataset_name}.inter")
         train_data[['user', 'item', 'label', time_col]].to_csv(
             inter_path, sep='\t', index=False, 
             header=["user:token", "item:token", "label:float", "time:float"]
         )
 
-        # 4. Configure RecBole
         config_dict = {
             "data_path": self.data_root,
             "dataset": self.dataset_name,
@@ -75,7 +71,7 @@ class Bert4REC(BaseRecsModel):
             "load_col": {"inter": ["user", "item", "label", "time"]},
             "MAX_ITEM_LIST_LENGTH": self.max_seq_len,
             "eval_args": {
-                "split": {"RS": [1.0, 0.0, 0.0]}, # Use all data for training
+                "split": {"RS": [1.0, 0.0, 0.0]}, 
                 "order": "TO", 
                 "mode": "full"
             },
@@ -97,12 +93,10 @@ class Bert4REC(BaseRecsModel):
             "show_progress": False,
         }
         
-        # 5. Initialize RecBole objects
         self.config = Config(model='BERT4Rec', dataset=self.dataset_name, config_dict=config_dict)
         self.dataset = create_dataset(self.config)
         self.train_data, _, _ = data_preparation(self.config, self.dataset)
         
-        # 6. Build User History for Inference
         u_map = self.dataset.field2token_id['user']
         i_map = self.dataset.field2token_id['item']
         

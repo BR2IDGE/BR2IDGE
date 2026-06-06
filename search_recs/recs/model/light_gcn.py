@@ -25,14 +25,6 @@ _NNModuleBase = nn.Module if nn is not None else object
 
 
 class _LightGCNCore(_NNModuleBase):
-    """
-    Core LightGCN module with linear neighborhood propagation.
-
-    Based on the original LightGCN design:
-    - only neighborhood aggregation
-    - no feature transforms
-    - no nonlinear activations
-    """
 
     def __init__(
         self,
@@ -82,10 +74,6 @@ class _LightGCNCore(_NNModuleBase):
 
 
 class LightGCNModel(BaseRecsModel):
-    """
-    LightGCN wrapper compatible with the framework interface:
-      preprocess(train_data) -> fit() -> prediction(test_data)
-    """
 
     def __init__(self, model_config: Dict[str, Any], features_config: Optional[dict] = None):
         super().__init__(model_config)

@@ -6,15 +6,6 @@ from search_recs.metric import BaseMetric
 class EvaluatorRecsManager(BaseEvaluator):
     
     def __init__(self, model, metrics, test_data, n_neg_samples=100):
-        """
-        Initializes the evaluator.
-        
-        Args:
-            model: Trained model wrapper.
-            metrics: Dict of {name: metric_class}.
-            test_data: Test DataFrame (positives only).
-            n_neg_samples (int): Number of negative samples to generate per user.
-        """
         super().__init__(model, metrics, test_data)
         
         self.n_neg_samples = n_neg_samples
@@ -27,7 +18,6 @@ class EvaluatorRecsManager(BaseEvaluator):
         Runs evaluation with negative sampling to ensure accurate metrics.
         """
         
-        # --- 1. Prepare Negative Sampling ---
         n_neg_samples = self.n_neg_samples
         
         try:
@@ -54,7 +44,7 @@ class EvaluatorRecsManager(BaseEvaluator):
                 negative_rows.append({
                     user_col: user_ext,
                     item_col: item_ext,
-                    label_col: 0.0  # Negative label
+                    label_col: 0.0  
                 })
 
         neg_df = pd.DataFrame(negative_rows, columns=[user_col, item_col, label_col])
@@ -62,7 +52,6 @@ class EvaluatorRecsManager(BaseEvaluator):
         # Combine positive and negative data
         eval_df = pd.concat([pos_df, neg_df], ignore_index=True)
         
-        # --- 2. Prediction ---
         y_true, y_pred = self.model.prediction(eval_df)
         
         if y_true is None:
@@ -72,7 +61,6 @@ class EvaluatorRecsManager(BaseEvaluator):
         y_true_list = list(y_true)
         y_pred_list = list(y_pred)
 
-        # --- 3. Calculate Metrics ---
         results = {}
         for topk in topks:
             results[topk] = {}

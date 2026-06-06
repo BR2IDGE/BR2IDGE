@@ -7,12 +7,7 @@ from libreco.data import split_by_num_chrono
 
 class RecsDataLoader(ABC):
     def __init__(self, dataloader_config: dict):
-        """
-        Initializes the base dataset for recommendation.
 
-        Args:
-            dataloader_config (dict): A dictionary of parameters specific to this dataset.
-        """
         print(dataloader_config)
         self.dataset_name = dataloader_config.get("dataset_name")
         
@@ -44,18 +39,6 @@ class RecsDataLoader(ABC):
         dataset: pd.DataFrame, 
         test_ratio: float = 0.1,
     ) -> tuple:
-        """
-        Performs a temporal split using libreco's split_by_ratio_chrono.
-        Sorts interactions by timestamp and assigns a proportion of the latest 
-        interactions to the test set.
-
-        Args:
-            dataset (pd.DataFrame): The full interaction DataFrame.
-            test_ratio (float): Proportion of data for the test set (e.g., 0.1 for 10%).
-
-        Returns:
-            tuple[pd.DataFrame, pd.DataFrame]: (train_data, test_data).
-        """
         train_data, test_data = split_by_ratio_chrono(dataset, test_size=test_ratio)
         print(f"Temporal split complete. Train shape={train_data.shape}, Test shape={test_data.shape}")
         return train_data, test_data
@@ -65,16 +48,7 @@ class RecsDataLoader(ABC):
         dataset: pd.DataFrame, 
         test_num: int = 100
     ) -> tuple:
-        """
-        Performs a temporal split (Leave-N-Out) per user.
 
-        Args:
-            dataset (pd.DataFrame): The full interaction DataFrame.
-            test_num (int): Number of latest items per user to put in the test set.
-
-        Returns:
-            tuple[pd.DataFrame, pd.DataFrame]: (train_data, test_data).
-        """
         train_data, test_data = split_by_num_chrono(dataset, test_size=test_num)
         
         print(f"Temporal split (leave-N-out) complete. N={test_num} per user.")
