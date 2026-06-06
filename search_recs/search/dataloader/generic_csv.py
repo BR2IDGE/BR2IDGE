@@ -34,7 +34,6 @@ class GenericCSVBuilder(BaseSearchDatasetBuilder):
         if not query_col or not doc_cols:
             raise ValueError("Configuration 'features' must contain 'query_col' and 'doc_cols'.")
 
-        # Concatenate document columns
         if isinstance(doc_cols, list):
             df["document"] = df[doc_cols].astype(str).agg('\n'.join, axis=1)
         else:
@@ -59,18 +58,14 @@ class GenericCSVBuilder(BaseSearchDatasetBuilder):
         final_df = df[required_cols].dropna().drop_duplicates(subset=["search_query", "document"])
         return final_df
 
-    # --- CORRECTION HERE: Overwrites split to return 3 parts ---
     def split(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Splits into Train, Validation, and Test sets."""
         test_size = self.cfg.test_size
         val_size = self.cfg.val_size
         
-        # Ensures there is remaining space for training
         if test_size + val_size >= 1.0:
              raise ValueError("The sum of test_size and val_size must be less than 1.0")
 
-        # 1. Separates Train from the Rest (Val + Test)
-        # Ex: If val=0.1 and test=0.2, temp_size = 0.3
         temp_size = val_size + test_size
         train_df, temp_df = train_test_split(
             df, 
@@ -78,9 +73,6 @@ class GenericCSVBuilder(BaseSearchDatasetBuilder):
             random_state=self.cfg.random_state
         )
 
-        # 2. Separates Val from Test
-        # We need to calculate the relative proportion within temp_df
-        # Ex: 0.2 / 0.3 = 0.66... (2/3 for test, 1/3 for validation)
         relative_test_size = test_size / temp_size
         val_df, test_df = train_test_split(
             temp_df, 
@@ -88,7 +80,6 @@ class GenericCSVBuilder(BaseSearchDatasetBuilder):
             random_state=self.cfg.random_state
         )
 
-        # Apply cuts (heads) if configured for quick debugging
         if self.cfg.head_train:
             train_df = train_df.head(self.cfg.head_train)
         if self.cfg.head_val:
@@ -114,5 +105,4 @@ def load_generic_csv_dataset(cfg: BuildConfig, **kwargs):
         cfg=cfg
     )
     
-    # Now build() will use our split() and return 3 dataframes
     return builder.build()

@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Tuple, List, Dict, Iterator
 from sklearn.model_selection import train_test_split
-import polars as pl  # Used for efficient processing of large rating datasets
+import polars as pl
 
 from .base_dataloader import BaseSearchDatasetBuilder, BuildConfig
 from search_recs.datasets import ensure_dataset
@@ -61,18 +61,14 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         - 20% Ground Truth
         """
         
-        # Define cache file path within the dataset directory
         cache_path = self.dataset_dir / "hybrid_test_cache.joblib"
 
-        # --- Cache Verification ---
         if cache_path.exists():
             print(f"[AmazonLoader] Cache found at {cache_path}. Loading hybrid dataset...")
             try:
                 import joblib
                 df_test = joblib.load(cache_path)
                 
-                # --- Random Variation: 10% Dropout ---
-                # Applied when no fixed seed is enforced or unconditionally enabled here
                 if True:
                     print("[AmazonLoader] Applying 10% 'History Dropout'...")
                     
@@ -81,31 +77,21 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                         items = history_str.split(',')
                         n = len(items)
                         
-                        # Skip removal if the history contains too few items
                         if n <= 1: return history_str
                         
-                        # Calculate the number of items to drop (targeting ~10%)
-                        # The max(1, ...) ensures at least one item is removed if possible
                         n_to_drop = max(1, int(n * drop_rate))
                         
-                        # Safety check: Ensure at least one item remains in the history
                         if n_to_drop >= n:
                             n_to_drop = n - 1
                             
-                        # Perform random removal
                         if n_to_drop > 0:
-                            # Select indices to remove
                             indices_to_drop = set(r.sample(range(n), n_to_drop))
-                            # Reconstruct the list preserving original order
                             items = [item for i, item in enumerate(items) if i not in indices_to_drop]
                             
                         return ",".join(items)
 
-                    # Apply the dropout function
                     df_test['search_query'] = df_test['search_query'].apply(drop_percentage_items)
                     
-                    # Optional: User subsampling can be applied alongside dropout
-                    # df_test = df_test.sample(frac=0.9).reset_index(drop=True)
                 
                 print(f"[AmazonLoader] Cache loaded successfully ({len(df_test)} users).")
                 return df_meta, pd.DataFrame(), df_test
@@ -118,7 +104,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             self.ratings_path = self.dataset_dir / "ratings.csv"
         print("[AmazonLoader] Building Hybrid Dataset (Centroid)... This may take time on the first run.")
 
-        # 1. Load interactions using Polars for performance efficiency
         df_int = pl.read_csv(
             self.ratings_path, 
             has_header=False, 
@@ -131,15 +116,12 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             }
         )
         
-        # 2. Density filter (Minimum 5 interactions)
         valid_users = df_int.group_by("user").count().filter(pl.col("count") >= 5).select("user")
         df_int = df_int.join(valid_users, on="user").sort(["user", "timestamp"])
 
-        # 3. Processing per user
         hybrid_test_rows = []
         all_product_ids = df_meta["document_id"].unique().tolist()
         
-        # Convert to pandas for the split loop
         df_pandas = df_int.to_pandas()
         for user, group in tqdm(df_pandas.groupby("user"), desc="Splitting Users"):
             n = len(group)
@@ -148,19 +130,14 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             idx60 = int(n * 0.6)
             idx80 = int(n * 0.8)
             
-            # BiEncoder Training (60%)
-            # Historical Query (20%) -> Converted to Average Vector
             query_items = group.iloc[idx60:idx80]["item"].tolist()
-            # Ground Truth (20%) -> Future items
             gt_items = group.iloc[idx80:]["item"].tolist()
             
             if not query_items or not gt_items: continue
 
-            # Negative Sampling (200 samples)
             pos_set = set(group["item"].tolist())
             neg_candidates = [i for i in all_product_ids if i not in pos_set]
             
-            # Ensure sample size does not exceed available candidates
             n_negs = min(200, len(neg_candidates))
             neg_sample = r.sample(neg_candidates, n_negs)
             
@@ -168,7 +145,7 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             r.shuffle(candidates)
 
             hybrid_test_rows.append({
-                "search_query": ",".join(query_items), # BiEncoder splits by comma
+                "search_query": ",".join(query_items),
                 "document_id": gt_items[0],
                 "candidate_ids": json.dumps(candidates),
                 "ground_truth_ids": json.dumps(gt_items[:20])
@@ -176,13 +153,11 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
 
         df_test = pd.DataFrame(hybrid_test_rows)
 
-        # --- Automatic Cache Saving ---
         if not df_test.empty:
             print(f"[AmazonLoader] Saving processed dataset to {cache_path}...")
             import joblib
             joblib.dump(df_test, cache_path)
 
-        # Training data remains based on search metadata to allow the BiEncoder to learn product semantics
         return df_meta, pd.DataFrame(), df_test
 
     def load_raw(self) -> None:
@@ -206,7 +181,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         for cat_chain in cat_raw:
             if isinstance(cat_chain, list):
                 for c in cat_chain:
-                    # Filter out generic or short categories
                     if c and len(c) > 2 and c.lower() not in ["electronics"]:
                         unique_cats.add(c)
             elif isinstance(cat_chain, str):
@@ -247,7 +221,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         print("[AmazonLoader] Processing metadata (Streaming)...")
         
         records = []
-        # Define a limit for testing. Set to None to process all (millions of products).
         MAX_PRODUCTS_TO_PROCESS = None 
         
         count = 0
@@ -258,7 +231,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                 try:
                     row = json.loads(line)
                     
-                    # DEBUG PRINT OF RAW DATA
                     if not printed_example:
                         print("\n" + "="*60)
                         print("[DEBUG] EXAMPLE OF RAW METADATA OBJECT:")
@@ -284,9 +256,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
                         document_text = f"{document_text}. {category_tag_text}"
                     category_value = category_tag_text if include_category_tags_in_document else "Metadata-Category"
                     
-                    # --- Core Logic ---
-                    # Ensures that if a product belongs to the "Camera" category,
-                    # it is added to the document list for that query.
                     for cat in categories:
                         records.append({
                             "search_query": cat,
@@ -311,25 +280,20 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         print(f"[AmazonLoader] Total pairs generated: {len(df)}")
         
         if not df.empty:
-            # 1. Remove exact duplicates first
             df = df.drop_duplicates(subset=["search_query", "document_id"])
             
-            # 2. Cut-off logic: Count documents per query
             query_counts = df['search_query'].value_counts()
             
-            # 3. Filter: Keep only queries with count >= 10
             min_docs = 10
             valid_queries = query_counts[query_counts >= min_docs].index
             
             df_filtered = df[df['search_query'].isin(valid_queries)].copy()
 
-            # --- INSERT HERE ---
             unique_queries = df_filtered['search_query'].nunique()
             print(f"[AmazonLoader] Queries before cut-off: {len(query_counts)}")
             print(f"[AmazonLoader] Queries after cut-off (min {min_docs} docs): {len(valid_queries)}")
             print(f"[AmazonLoader] Final total pairs: {len(df_filtered)}")
             print(f"[AmazonLoader] Total UNIQUE QUERIES (Categories): {unique_queries}")
-            # --------------------
             
             return df_filtered
 
@@ -343,22 +307,17 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         import json
         import random as r
 
-        # 1. Initial Split between Train and the rest (Val/Test)
         train_val, test_df = train_test_split(
             df, test_size=self.cfg.test_size, random_state=rs, shuffle=True
         )
 
-        # 2. Function to transform Normal Search into Search with Negative Sampling
         def transform_to_sampled_search(target_df, full_df):
-            # CHANGE HERE: Use "document_id"
             all_item_ids = full_df["document_id"].unique().tolist()
             new_rows = []
             
-            # CHANGE HERE: Use "search_query"
             grouped = target_df.groupby("search_query")
 
             for query_text, group in tqdm(grouped, desc="Sampling Negatives for Eval"):
-                # CHANGE HERE: Use "document_id" and "document"
                 gt_ids = group["document_id"].unique().tolist()
                 
                 pos_sample = gt_ids[:50]
@@ -382,13 +341,11 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
         print(f"[AmazonLoader] Applying search sampling to Test Set...")
         test_df = transform_to_sampled_search(test_df, df)
 
-        # 3. Finalize Validation split
         val_rel = self.cfg.val_size / (1.0 - self.cfg.test_size) if (1.0 - self.cfg.test_size) > 0 else 0.1
         train_df, val_df = train_test_split(
             train_val, test_size=min(0.9, val_rel), random_state=rs, shuffle=True
         )
 
-        # Apply head if configured
         if self.cfg.head_train:
             train_df = train_df.sample(n=min(self.cfg.head_train, len(train_df)), random_state=rs)
         
@@ -398,7 +355,6 @@ class AmazonSearchDataLoader(BaseSearchDatasetBuilder):
             test_df.reset_index(drop=True)
         )
 
-# Entry Point
 def get_loader(cfg: BuildConfig, **kwargs):
     dataset_name = kwargs.pop("path", kwargs.pop("dataset_name", "amazonElectronics"))
     loader = AmazonSearchDataLoader(cfg, dataset_name=dataset_name, **kwargs)

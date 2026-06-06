@@ -47,7 +47,6 @@ class SpladeKnnModel(BaseRecsModel):
         self._test_df: Optional[pd.DataFrame] = None
         self._val_df: Optional[pd.DataFrame] = None
 
-        # Corpus stored L2-normalized so dot product == cosine similarity
         self.corpus_matrix: Optional[csr_matrix] = None
         self.corpus_docs: Optional[List[str]] = None
         self.doc_ref_to_idx: Dict[str, int] = {}
@@ -98,7 +97,7 @@ class SpladeKnnModel(BaseRecsModel):
 
             output = self.model(**enc)
             activations = torch.log1p(torch.relu(output.logits)) * enc.attention_mask.unsqueeze(-1)
-            vec = activations.max(dim=1).values  # (B, vocab)
+            vec = activations.max(dim=1).values 
 
             rows.append(csr_matrix(vec.cpu().numpy().astype(np.float32)))
 
@@ -106,7 +105,6 @@ class SpladeKnnModel(BaseRecsModel):
             return csr_matrix((0, self.vocab_size), dtype=np.float32)
 
         matrix = vstack(rows).astype(np.float32)
-        # L2-normalize: dot product on normalized vectors == cosine similarity
         matrix = normalize(matrix, norm="l2", axis=1, copy=False)
         return matrix
 

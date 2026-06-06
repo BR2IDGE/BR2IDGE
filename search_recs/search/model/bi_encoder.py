@@ -25,16 +25,13 @@ class BiEncoderModel(BaseRecsModel):
         
         params = model_config.get("parameters", {})
         
-        # Backbone Configuration
         self.pretrained_name: str = params.get("pretrained_name", "all-MiniLM-L6-v2")
         self.token_max_length: int = int(params.get("token_max_length", 128))
         
-        # Training Hyperparameters
         self.batch_size: int = int(params.get("batch_size", 16))
         self.learning_rate: float = float(params.get("learning_rate", 2e-5))
         self.epochs: int = int(params.get("epochs", 1))
         
-        # Training Hyperparameters (Advanced) -- CORREÇÃO AQUI
         self.num_warmup_factor: float = float(params.get("num_warmup_factor", 0.1))
         self.early_stopping_patience: int = int(params.get("early_stopping_patience", 0))
         self.early_stopping_threshold: float = float(params.get("early_stopping_threshold", 0.01))
@@ -44,19 +41,15 @@ class BiEncoderModel(BaseRecsModel):
         self.save_steps: int = int(params.get("save_steps", 1000))
         self.evaluation_steps: int = int(params.get("evaluation_steps", 1000))
         
-        # Indexing Configuration
         self.annoy_n_trees: int = int(params.get("annoy_n_trees", 10))
 
-        # Data Column Mapping
         self.qcol: str = params.get("query_col", "search_query")
         self.dcol: str = params.get("doc_col", "document")
         self.did_col: str = params.get("doc_id_col", "document_id")
 
-        # Strategy Selection
         self.task: str = params.get("task", "normal")
         print(f"[BiEncoderModel] Task initialized: '{self.task}'")
 
-        # Model State
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model: Optional[SentenceTransformer] = None
 
@@ -67,8 +60,6 @@ class BiEncoderModel(BaseRecsModel):
         self.annoy_index: Optional[AnnoyIndex] = None
         self.corpus_docs: Optional[List[str]] = None
         self.doc_ref_to_annoy_idx: Dict[str, int] = {}
-
-    # --------------------- HELPERS ---------------------
 
     def _ensure_model(self) -> None:
         if self.model is None:
@@ -126,8 +117,6 @@ class BiEncoderModel(BaseRecsModel):
         )
         trainer.train()
         print("[BiEncoderModel] Training finished.")
-
-    # --------------------- ENCODING & INDEXING ---------------------
 
     def _encode_texts(self, texts: List[str], text_type: str) -> np.ndarray:
         prefix = "query: " if text_type == "query" else "passage: "
@@ -232,10 +221,6 @@ class BiEncoderModel(BaseRecsModel):
             pass
         return []
 
-    # -------------------------------------------------------------------------
-    # PREDICTION
-    # -------------------------------------------------------------------------
-
     def prediction(self, test_data: pd.DataFrame) -> Tuple[List[List[int]], List[List[float]]]:
         print("\n[BiEncoderModel] Starting Prediction Phase...")
 
@@ -252,12 +237,8 @@ class BiEncoderModel(BaseRecsModel):
         if not queries:
             return [], []
 
-        # Check for candidate columns
         has_candidate_col = "candidate_ids" in test_data.columns and "ground_truth_ids" in test_data.columns
 
-        # ---------------------------------------------------------------------
-        # 1. OPTIMIZED EVALUATION (Reranking Candidates)
-        # ---------------------------------------------------------------------
         if has_candidate_col:
             print(f"[BiEncoderModel] Mode: Candidate Reranking. Task: {self.task.upper()}")
             
@@ -298,9 +279,6 @@ class BiEncoderModel(BaseRecsModel):
 
             return all_y_true, all_y_pred
 
-        # ---------------------------------------------------------------------
-        # 2. FULL CORPUS RETRIEVAL (Legacy Mode)
-        # ---------------------------------------------------------------------
         print(f"[BiEncoderModel] Mode: Full Corpus Retrieval. Task: {self.task.upper()}")
         
         if self.task in ("hybrid", "centroid-vector", "centroid_vector"):

@@ -16,7 +16,7 @@ class BM25Model(BaseRecsModel):
 
         # 1. Identity and Algorithm Configuration
         self.index_name: str = params.get("index_name", "bm25_index")
-        self.retriever_type: str = params.get("model", "bm25")  # bm25, tf-idf, etc.
+        self.retriever_type: str = params.get("model", "bm25")  
         self.hyperparams: Dict = params.get("hyperparams", {"b": 0.75, "k1": 1.5})
 
         # 2. Column Mapping
@@ -24,7 +24,7 @@ class BM25Model(BaseRecsModel):
         self.dcol: str = params.get("doc_col", "document")
         self.did_col: str = params.get("doc_id_col", "document_id")
 
-        # 3. Hybrid Strategy (Tag Fusion)
+        # 3. Hybrid Strategy
         self.strategy: str = params.get("task", "normal")  # 'normal' or 'hybrid'
         self.dataset_path: str = params.get("dataset_path", "./data/ml-25m")
         self.tagfusion_min_relevance: float = float(params.get("tagfusion_min_relevance", 0.9))
@@ -38,9 +38,7 @@ class BM25Model(BaseRecsModel):
 
         print(f"[BM25Model] Init | Mode: {self.strategy.upper()} | Index: {self.index_name}")
 
-    # -------------------------------------------------------------------------
     # HYBRID RECOMMENDATION LOGIC (TAG FUSION)
-    # -------------------------------------------------------------------------
 
     def _ensure_external_tag_data(self):
         """
@@ -52,30 +50,23 @@ class BM25Model(BaseRecsModel):
 
         path = pathlib.Path(self.dataset_path)
         
-        # --- CASE 1: MOVIELENS (Genome Tags) ---
         if "ml-25m" in str(path).lower():
             print(f"[BM25Model] Loading internal Genome Tags (MovieLens)...")
             self.movie_tag_map = load_genome_tag_map(str(path), min_relevance=self.tagfusion_min_relevance)
 
-        # --- CASE 2: LAST.FM (2K Tags associated with 360K base) ---
         elif "lastfm" in str(path).lower():
             print(f"[BM25Model] Loading internal Last.fm Metadata...")
             try:
-                # 1. Load files downloaded by the loader
                 tags_df = pd.read_csv(path / "tags.dat", sep="\t", encoding="latin-1", on_bad_lines='skip')
                 tagging_df = pd.read_csv(path / "user_taggedartists.dat", sep="\t", encoding="latin-1", on_bad_lines='skip')
                 artists_2k = pd.read_csv(path / "artists.dat", sep="\t", encoding="latin-1", on_bad_lines='skip')
                 
-                # 2. Merge to get Artist_Name -> Tags
                 df_merged = tagging_df.merge(tags_df, on="tagID").merge(artists_2k[["id", "name"]], left_on="artistID", right_on="id")
                 
-                # Group by artist name
                 name_to_tags = df_merged.groupby(df_merged["name"].str.lower().str.strip())["tagValue"].apply(
                     lambda x: {str(t): 1.0 for t in x.unique()[:5]}
                 ).to_dict()
 
-                # 3. Map to 360K numerical IDs (using the order of the indexed collection)
-                # IMPORTANT: This maps the numerical ID (0, 1, 2...) to tags via Artist Name
                 self.movie_tag_map = {}
                 if self._collection:
                     for doc in self._collection:
@@ -99,21 +90,17 @@ class BM25Model(BaseRecsModel):
         self._ensure_external_tag_data()
 
         if not self.movie_tag_map:
-            # Fallback: If no map exists, use the text itself (replacing commas)
             return str(history_str).replace(",", " ")
 
-        # Remove spaces and split by comma
         item_ids = [x.strip() for x in str(history_str).split(",") if x.strip()]
         
         tag_aggregator = {}
 
         for mid in item_ids:
-            # Retrieve tags for this item from the map built in preprocess or loaded externally
             tags_dict = self.movie_tag_map.get(str(mid), {})
             for tag_name, relevance in tags_dict.items():
                 tag_aggregator[tag_name] = tag_aggregator.get(tag_name, 0.0) + relevance
 
-        # Retrieve top 15 most frequent tags in history
         sorted_tags = sorted(tag_aggregator.items(), key=lambda x: x[1], reverse=True)
         top_tags = [t[0] for t in sorted_tags[:15]]
 
@@ -122,9 +109,7 @@ class BM25Model(BaseRecsModel):
             
         return " ".join(top_tags)
 
-    # -------------------------------------------------------------------------
     # PREPROCESS & FIT (INDEX CONSTRUCTION)
-    # -------------------------------------------------------------------------
 
     def preprocess(self, train_data: pd.DataFrame, **kwargs):
         print(f"[BM25Model] Preprocess | Strategy: {self.strategy}")
@@ -132,7 +117,6 @@ class BM25Model(BaseRecsModel):
         test_data = kwargs.get("test_data")
         has_candidate_mode = isinstance(test_data, pd.DataFrame) and ("candidate_ids" in test_data.columns)
 
-        # --- TAG/CATEGORY MAPPING LOGIC (AMAZON / GENERIC) ---
         if self.strategy in ("hybrid", "tag-query", "tag_query"):
             category_values = set(train_data.get("category", pd.Series(dtype=str)).dropna().astype(str).unique())
             is_user_history_movielens = bool(category_values) and category_values <= {"UserHistoryTrain"}
@@ -140,7 +124,6 @@ class BM25Model(BaseRecsModel):
                 print("[BM25Model] MovieLens user-history hybrid detected; Genome tag map will be loaded lazily.")
                 self.movie_tag_map = None
             else:
-                # If the loader provided real categories, build an item -> category map.
                 print("[BM25Model] Building Tag/Category map from Metadata...")
                 self.movie_tag_map = {}
 
@@ -154,8 +137,8 @@ class BM25Model(BaseRecsModel):
                 print(f"[BM25Model] {len(self.movie_tag_map)} items mapped with categories.")
 
         # --- INDEXING ---
+        
         if has_candidate_mode:
-            # Hybrid Mode: Index the product catalog
             print("[BM25Model] Indexing product catalog...")
             unique_docs = train_data[[self.did_col, self.dcol]].drop_duplicates(subset=[self.did_col])
             
@@ -165,7 +148,6 @@ class BM25Model(BaseRecsModel):
             self._collection = collection_df[["id", "text"]].to_dict("records")
             self.corpus_size = len(self._collection)
         else:
-            # Text Search Mode (Legacy)
             print("[BM25Model] Indexing Query-Doc pairs (Search Mode)...")
             parts = [train_data]
             if test_data is not None: parts.append(test_data)
@@ -207,9 +189,7 @@ class BM25Model(BaseRecsModel):
         self._sr.index(self._collection)
         print(f"[BM25Model] Fit complete. Index '{self.index_name}' ready.")
 
-    # -------------------------------------------------------------------------
     # Helper Methods
-    # -------------------------------------------------------------------------
 
     def _hits_to_map(self, hits: Any) -> Dict[str, float]:
         """
@@ -226,11 +206,9 @@ class BM25Model(BaseRecsModel):
         if isinstance(hits, list):
             out = {}
             for it in hits:
-                # Case 1: tuple/list (id, score)
                 if isinstance(it, (tuple, list)) and len(it) >= 2:
                     out[str(it[0])] = float(it[1])
                     continue
-                # Case 2: dict with common keys
                 if isinstance(it, dict):
                     doc_id = it.get("id") or it.get("doc_id") or it.get("document_id")
                     score = it.get("score") or it.get("bm25") or it.get("value")
@@ -238,11 +216,9 @@ class BM25Model(BaseRecsModel):
                         out[str(doc_id)] = float(score)
             return out
 
-        # Fallback: unknown format
         return {}
 
     def _parse_json_list(self, v: Any) -> List[str]:
-        # Adapted for strings (ASINs/IDs)
         if isinstance(v, list): return [str(x) for x in v]
         if not v: return []
         try:
@@ -251,9 +227,7 @@ class BM25Model(BaseRecsModel):
         except:
             return []
 
-    # -------------------------------------------------------------------------
     # PREDICTION (SEARCH AND EVALUATION)
-    # -------------------------------------------------------------------------
 
     def prediction(self, test_data: pd.DataFrame) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         if self._sr is None:
@@ -316,9 +290,7 @@ class BM25Model(BaseRecsModel):
 
             return all_y_true, all_y_pred
 
-        # -------------------------------------------------------------------------
         # NORMAL / LEGACY MODE (Maintained for backward compatibility)
-        # -------------------------------------------------------------------------
         else:
             print("[BM25Model] Standard Search Mode (Full Corpus)...")
             raw_queries = test_data[self.qcol].tolist()

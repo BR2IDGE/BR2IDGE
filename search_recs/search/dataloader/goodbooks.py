@@ -1,4 +1,3 @@
-# data_builders/goodbooks.py
 import pandas as pd
 from typing import Optional
 from sklearn.model_selection import train_test_split
@@ -45,14 +44,10 @@ def load_goodbooks_dataset(
     Reads Goodbooks CSV files, constructs the (search_query, document, category) triplets,
     and returns (train_df, val_df, test_df) ready for the SentenceQueryDocumentDataset.
     """
-    # 1. Data Loading
-    # Note: Assumes standard directory structure for the Goodbooks-10k dataset
     books = pd.read_csv("../../data/goodbooks-10k/books.csv")
     book_tags = pd.read_csv("../../data/goodbooks-10k/book_tags.csv")
     tags = pd.read_csv("../../data/goodbooks-10k/tags.csv")
 
-    # 2. Merging
-    # Join book_tags + tags to get tag_name, then merge with books for metadata
     df = (
         book_tags
         .merge(tags, on="tag_id", how="inner")
@@ -64,11 +59,9 @@ def load_goodbooks_dataset(
         )
     )
 
-    # 3. Optional Filtering
     if cfg.min_tag_count is not None and "count" in df.columns:
         df = df[df["count"] >= cfg.min_tag_count]
 
-    # 4. Final Field Construction
     df["document"] = df.apply(GoodbooksBuilder._create_document, axis=1)
     df["category"] = df.apply(GoodbooksBuilder._create_category, axis=1)
 
@@ -79,7 +72,6 @@ def load_goodbooks_dataset(
         .drop_duplicates()
     )
 
-    # 5. Data Splitting
     test_size = float(cfg.test_size)
     val_size = float(cfg.val_size)
     
@@ -88,28 +80,23 @@ def load_goodbooks_dataset(
 
     total_temp_size = test_size + val_size 
     
-    # First split: Separate Train from the Rest (Validation + Test)
     train_df, temp_df = train_test_split(
         pairs,
         test_size=total_temp_size, 
         random_state=cfg.random_state
     )
 
-    # Calculate relative size of Test within the Temp set
     relative_test_size = test_size / total_temp_size 
 
-    # Second split: Separate Validation and Test using the calculated ratio
     val_df, test_df = train_test_split(
         temp_df,
         test_size=relative_test_size, 
         random_state=cfg.random_state 
     )
 
-    # 6. Subset Selection (Head) - for debugging or quick experiments
     if cfg.head_train:
         train_df = train_df.head(cfg.head_train)
     
-    # Assuming cfg.head_val applies to both validation and test sets
     if cfg.head_val:
         val_df = val_df.head(cfg.head_val)
         test_df = test_df.head(cfg.head_val) 

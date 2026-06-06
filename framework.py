@@ -1169,7 +1169,6 @@ def run_preprocess(task_type, ds_cfg, dataset_key, splits_path, force_preprocess
     else:
         loader_instance = loader_entry(ds_cfg)
 
-        # Optional hybrid loader selection (e.g., query-as-user / tag-as-user)
         exp_cfg = exp_config or {}
         hybrid_enabled = bool(exp_cfg.get("hybrid", False))
         hybrid_strategy = exp_cfg.get("hybridStrategie", exp_cfg.get("hybridStrategy", None))

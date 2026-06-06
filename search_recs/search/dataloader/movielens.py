@@ -10,10 +10,6 @@ import numpy as np
 import time
 from search_recs.datasets import ensure_dataset
 
-# -------------------------------------------------------------------------
-# BUILD AND LOADING CLASSES
-# -------------------------------------------------------------------------
-
 class MovieLensBuilder(BaseSearchDatasetBuilder):
     def __init__(self, movies_path: str, tags_path: str, cfg: BuildConfig = BuildConfig()):
         super().__init__(cfg)
@@ -40,16 +36,11 @@ class MovieLensDataLoader:
         if cfg.random_state is not None:
             r.seed(cfg.random_state)
 
-    # -----------------------------
-    # Helper methods for lightweight hybrid mode
-    # -----------------------------
     def _runtime_seed(self) -> int:
         """
         If cfg.random_state is set, use it (reproducible).
         Otherwise, generate a time-based seed.
         """
-        # if self.cfg.random_state is not None:
-        #    return int(self.cfg.random_state)
         return int(time.time() * 1000) % (2**31 - 1)
 
     def _split_userwise_chrono_ratio(self, ratings: pd.DataFrame, train_ratio: float = 0.6):
@@ -76,7 +67,6 @@ class MovieLensDataLoader:
         (selecting the most recent ones within the test block).
         """
         test_ratings = test_ratings.sort_values(["userId", "timestamp"], kind="mergesort")
-        # Selects the last max_test_items within the test block
         return test_ratings.groupby("userId", sort=False).tail(max_test_items).copy()
 
     def _split_test_into_query_and_gt(self, test_ratings_user: pd.DataFrame):
@@ -85,14 +75,12 @@ class MovieLensDataLoader:
         """
         items = test_ratings_user["movieId"].tolist()
         if len(items) < 2:
-            return [], []  # Cannot split
+            return [], []
 
         half = len(items) // 2
-        # First half -> query; second half -> GT
         query_items = items[:half]
         gt_items = items[half:]
         if len(gt_items) == 0:
-            # Edge case: if len=2 and half=1, ok; if len=1 it returned early
             return [], []
         return query_items, gt_items
 
@@ -100,7 +88,6 @@ class MovieLensDataLoader:
         """
         Samples negatives without replacement, respecting excluded items.
         """
-        # Filtered catalog (np.setdiff1d handles uniqueness)
         possible = np.setdiff1d(all_items, np.fromiter(excluded_set, dtype=all_items.dtype), assume_unique=False)
         if len(possible) == 0:
             return []
@@ -133,10 +120,8 @@ class MovieLensDataLoader:
             if len(seq) < (min_hist_len + 1):
                 continue
 
-            # Target candidates: from index min_hist_len to end
             t_indices = list(range(min_hist_len, len(seq)))
 
-            # Sample targets to limit examples
             if len(t_indices) > max_pairs_per_user:
                 t_indices = rng.choice(t_indices, size=max_pairs_per_user, replace=False).tolist()
                 t_indices.sort()
@@ -170,7 +155,6 @@ class MovieLensDataLoader:
         """
         rng = np.random.default_rng(seed)
 
-        # Items seen in training per user
         train_seen = train_ratings.groupby("userId")["movieId"].agg(set).to_dict()
 
         test_ratings = test_ratings.sort_values(["userId", "timestamp"], kind="mergesort")
@@ -192,7 +176,6 @@ class MovieLensDataLoader:
             rows.append({
                 "userId": int(uid),
                 "search_query": ",".join(map(str, query_items)),
-                # Serialize as JSON string for DataFrame/CSV stability
                 "ground_truth_ids": json.dumps(list(map(int, gt_items))),
                 "candidate_ids": json.dumps(list(map(int, candidate_ids))),
                 "category": "UserHistoryTestUserwise",
@@ -207,7 +190,7 @@ class MovieLensDataLoader:
             df,
             test_size=self.cfg.test_size,
             random_state=rs,
-            shuffle=True,  # Important
+            shuffle=True,  
         )
 
         val_rel = self.cfg.val_size / (1.0 - self.cfg.test_size) if (1.0 - self.cfg.test_size) > 0 else 0.1
@@ -218,7 +201,6 @@ class MovieLensDataLoader:
             shuffle=True,
         )
 
-        # If head_train/head_test is configured, randomize before slicing
         if self.cfg.head_train:
             train_df = train_df.sample(n=min(self.cfg.head_train, len(train_df)), random_state=rs)
         if self.cfg.head_test:
@@ -233,11 +215,9 @@ class MovieLensDataLoader:
         genome_tags = pd.read_csv(self.base_path / "genome-tags.csv")
         genome_scores = pd.read_csv(self.base_path / "genome-scores.csv")
 
-        # Relevance filter for search
         genome_scores = genome_scores[genome_scores["relevance"] > 0.8].copy()
         genome_data = genome_scores.merge(genome_tags, on="tagId", how="left")
 
-        # Corpus creation with Tags
         tag_agg = genome_data.groupby("movieId")["tag"].agg(list).reset_index()
         movies_enriched = movies.merge(tag_agg, on="movieId", how="left")
         movies_enriched["document"] = movies_enriched.apply(
@@ -249,11 +229,9 @@ class MovieLensDataLoader:
         final_df = final_df.rename(columns={"tag": "search_query"}).dropna()
         final_df["category"] = "TagSearch"
 
-        # --- STATISTICS ---
         unique_queries = final_df["search_query"].nunique()
         print(f"[MovieLens-Search] Total pairs: {len(final_df)}")
         print(f"[MovieLens-Search] Total UNIQUE QUERIES (Tags): {unique_queries}")
-        # ------------------
 
         return self._split_and_sample(final_df[["search_query", "document", "document_id", "category"]])
 
@@ -283,16 +261,12 @@ class MovieLensDataLoader:
         corpus_lookup = movies[["movieId", "document"]].rename(columns={"movieId": "document_id"})
         corpus_lookup["document_id"] = corpus_lookup["document_id"].astype(int)
 
-        # ---- SPLIT 60/40 PER USER ----
         train_ratings, test_ratings = self._split_userwise_chrono_ratio(ratings, train_ratio=0.6)
 
-        # Test cap: max 40 per user (from test block)
         test_ratings = self._cap_test_interactions(test_ratings, max_test_items=40)
 
-        # Item catalog
         all_items = pd.unique(ratings["movieId"].astype(int).to_numpy())
 
-        # ---- TRAINING: pairs (hist -> next) with user limit ----
         max_pairs_per_user = int(getattr(self.cfg, "max_pairs_per_user", 50) or 50)
         max_hist_len = int(getattr(self.cfg, "max_hist_len", 50) or 50)
         min_hist_len = int(getattr(self.cfg, "min_hist_len", 3) or 3)
@@ -305,7 +279,6 @@ class MovieLensDataLoader:
             seed=rs,
         )
 
-        # Merge to add document text
         train_df = train_pairs.merge(corpus_lookup, on="document_id", how="inner")
 
         if getattr(self.cfg, "head_train", None):
@@ -314,7 +287,6 @@ class MovieLensDataLoader:
                 print(f"[hybrid] Applying head_train: reducing train from {len(train_df)} to {limit}")
                 train_df = train_df.sample(n=limit, random_state=rs)
 
-        # ---- TESTING: 1 row per user with candidates (GT + 200 negatives) ----
         test_userwise = self._build_hybrid_test_rows_userwise(
             train_ratings=train_ratings,
             test_ratings=test_ratings,
@@ -323,7 +295,6 @@ class MovieLensDataLoader:
             seed=rs,
         )
 
-        # Add document column to maintain schema compatibility (unused in candidate mode)
         test_df = test_userwise.copy()
         test_df["document_id"] = -1
         test_df["document"] = ""
@@ -334,15 +305,10 @@ class MovieLensDataLoader:
                 print(f"[hybrid] Applying head_test: reducing test users from {len(test_df)} to {limit}")
                 test_df = test_df.sample(n=limit, random_state=rs)
 
-        # Validation set not used here
         val_df = pd.DataFrame(columns=train_df.columns)
 
         print(f"[hybrid] Final Train pairs: {len(train_df)} | Final Test users: {len(test_df)}")
         return train_df.reset_index(drop=True), val_df.reset_index(drop=True), test_df.reset_index(drop=True)
-    
-# -------------------------------------------------------------------------
-# INTERFACE FUNCTIONS (ENTRY POINTS)
-# -------------------------------------------------------------------------
 
 def load_movielens_dataset(cfg: BuildConfig, dataset_path: str = "./data/ml-25m", **kwargs):
     """
@@ -351,7 +317,6 @@ def load_movielens_dataset(cfg: BuildConfig, dataset_path: str = "./data/ml-25m"
     mode = kwargs.get("mode", "normal")
     base_path = ensure_dataset("ml-25m")
     
-    # Path fallbacks
     if not base_path.exists():
         for p in [pathlib.Path("..") / dataset_path, pathlib.Path("data/ml-25m")]:
             if p.exists():

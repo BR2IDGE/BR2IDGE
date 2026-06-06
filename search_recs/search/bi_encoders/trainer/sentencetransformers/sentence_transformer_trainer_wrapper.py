@@ -2,7 +2,7 @@ from abc import ABC
 
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments
 from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
-from transformers import EarlyStoppingCallback # Add this import to your file
+from transformers import EarlyStoppingCallback
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -14,7 +14,7 @@ class SentenceTransformerTrainerWrapper(ABC):
 
     def __init__(
         self,
-        model_wrapper: SentenceTransformer, # Rename it to model_wrapper
+        model_wrapper: SentenceTransformer, 
         train_dataset: Dataset,
         val_dataset: Dataset,
         batch_size: int = 128,
@@ -38,7 +38,7 @@ class SentenceTransformerTrainerWrapper(ABC):
             num_warmup_factor: factor for the learning rate warmup
             model_dir: path to save the model
         """
-        self.model_wrapper = model_wrapper  # Rename it to model_wrapper
+        self.model_wrapper = model_wrapper 
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.batch_size = batch_size
@@ -52,7 +52,6 @@ class SentenceTransformerTrainerWrapper(ABC):
         self.early_stopping_patience = early_stopping_patience
         self.early_stopping_threshold = early_stopping_threshold
 
-        # Accept either a raw SentenceTransformer or an older wrapper exposing `.sbert`.
         inner_sbert_model = getattr(self.model_wrapper, "sbert", self.model_wrapper)
 
         self.train_dataloader = DataLoader(
@@ -91,8 +90,7 @@ class SentenceTransformerTrainerWrapper(ABC):
                 self.early_stop_callback = None
             self.load_best_model_at_end = True
         except Exception:
-            # Handle case where validation data isn't in Example format (e.g., just triples)
-            self.evaluator = None # You must set load_best_model_at_end=False if this happens
+            self.evaluator = None 
             self.load_best_model_at_end = False
             self.early_stop_callback = None
 
