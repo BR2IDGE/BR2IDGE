@@ -1,5 +1,5 @@
 {
-  "experiment_name": "BM25",
+  "experiment_name": "Search_experiment",
   "task_type": "search",
   "output_dir": "artifacts",
   "dataset": { 
@@ -8,6 +8,9 @@
   "model": [
     { 
       "name": "BM25Model"
+    },
+    {
+      "name": "SpladeKnnModel"
     }
   ],
   "execution": {
@@ -18,6 +21,6 @@
   },
   "evaluation": {
     "top_ks": [5, 10, 20, 50],
-    "metrics": ["NDCG", "RECALL", "MAP", "PRECISION"]
+    "metrics": ["NDCG", "RECALL", "PRECISION"]
   }
 }

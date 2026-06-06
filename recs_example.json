@@ -1,5 +1,5 @@
 {
-  "experiment_name": "Benchmark_MatrixFactorization_vs_Hybrid",
+  "experiment_name": "Recs_experiment",
   "task_type": "recs",
   "output_dir": "artifacts",
 
@@ -10,12 +10,15 @@
   "model":[ 
     {
       "name": "Bert4REC"
+    },
+    {
+      "name": "DeepFMModel"  
     }
   ],
 
   "execution": {
+    "force": ["preprocess", "features", "eval", "train"],
     "skip": [],
-    "force": [],
     "no_save": [],
     "n_runs": 1,
     "window_size": 0.05
@@ -25,7 +28,7 @@
     "n_pos_samples": 20,  
     "n_neg_samples": 200,
     "top_ks": [5, 10, 20, 50],
-    "metrics": ["NDCG", "RECALL", "PRECISION", "MAP", "MRR"],
+    "metrics": ["NDCG", "RECALL", "PRECISION"],
     "stats": {
       "tests": [],
       "alpha": 0.05,
