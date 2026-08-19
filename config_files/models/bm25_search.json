@@ -3,7 +3,7 @@
     "model_name": "BM25Model",
     "name": "BM25Model",
     "parameters": {
-      "task": "hybrid",
+      "task": "normal",
       "index_name": "bm25_index",
       "model": "bm25",
       "query_col": "search_query",
