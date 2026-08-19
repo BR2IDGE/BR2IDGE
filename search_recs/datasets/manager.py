@@ -56,6 +56,22 @@ DATASETS: Dict[str, Dict] = {
     },
 }
 
+BEIR_BASE_URL = os.environ.get(
+    "BR2IDGE_BEIR_BASE_URL",
+    "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets",
+)
+
+BEIR_SUBSETS = ("scifact", "nfcorpus", "arguana", "scidocs")
+
+for _subset in BEIR_SUBSETS:
+    DATASETS[f"beir-{_subset}"] = {
+        "folder": f"beir-{_subset}",
+        "archive": f"beir-{_subset}.zip",
+        "url": f"{BEIR_BASE_URL}/{_subset}.zip",
+        "required": ["corpus.jsonl", "queries.jsonl", "qrels/test.tsv"],
+        "aliases": [f"beir_{_subset}", f"beir{_subset}", _subset],
+    }
+
 
 def _repo_root() -> Path:
     cur = Path(__file__).resolve()
@@ -222,6 +238,15 @@ def _download_zenodo_bundle_and_extract_archives(archives_dir: Path) -> None:
         )
 
 
+def _ensure_archive_from_url(archive_path: Path, url: str) -> None:
+    """Fetch a single dataset archive from its own URL (used by the BEIR subsets)."""
+    if _looks_like_zip(archive_path):
+        return
+
+    print(f"[datasets] Downloading {archive_path.name} from {url} ...")
+    _download_file(url, archive_path)
+
+
 def _ensure_archive_from_zenodo(archive_path: Path) -> None:
     """
     Make sure `archive_path` (e.g. data/_archives/ml-25m.zip) exists, fetching it
@@ -265,7 +290,11 @@ def ensure_dataset(name: str) -> Path:
             pass
     if archive is None:
         archive = _data_root() / "_archives" / archive_name
-        _ensure_archive_from_zenodo(archive)
+        direct_url = spec.get("url")
+        if direct_url:
+            _ensure_archive_from_url(archive, direct_url)
+        else:
+            _ensure_archive_from_zenodo(archive)
 
     print(f"[datasets] Extracting {archive.name} -> {target_dir}")
     tmp_dir = _safe_extract_zip(archive, _data_root())
