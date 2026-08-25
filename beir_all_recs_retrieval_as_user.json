@@ -1,0 +1,63 @@
+{
+  "experiment_name": "BEIR_NFCorpus_AllRecs_RetrievalAsUser",
+  "task_type": "recs",
+  "hybrid": true,
+  "hybridStrategie": "retrieval-as-user",
+  "output_dir": "artifacts",
+  "dataset": {
+    "name": "beir_nfcorpus"
+  },
+  "model": [
+    {
+      "name": "LightFMModel"
+    },
+    {
+      "name": "DeepFMModel"
+    },
+    {
+      "name": "Bert4REC"
+    },
+    {
+      "name": "LightGCNModel"
+    },
+    {
+      "name": "ItemKNNModel"
+    },
+    {
+      "name": "ALSModel"
+    },
+    {
+      "name": "NMFRecommender"
+    }
+  ],
+  "execution": {
+    "skip": [],
+    "force": [],
+    "no_save": [],
+    "n_runs": 2,
+    "window_size": 0.05
+  },
+  "evaluation": {
+    "n_pos_samples": 20,
+    "n_neg_samples": 200,
+    "top_ks": [
+      5,
+      10,
+      20,
+      50
+    ],
+    "metrics": [
+      "NDCG",
+      "PRECISION",
+      "RECALL"
+    ],
+    "stats": {
+      "tests": [
+        "ttest_rel"
+      ],
+      "min_runs": 2,
+      "alpha": 0.05,
+      "symbol": "\u25b2"
+    }
+  }
+}

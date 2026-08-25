@@ -17,12 +17,8 @@ REGISTRY = {
     "lastfm": load_lastfm_dataset,  
     "generic_csv": load_generic_csv_dataset,
     "amazonelectronics": load_amazon_search_dataset,
-    # Generic entry: the subset is taken from the dataset config.
-    "beir": load_beir_dataset,
 }
 
-# One registry entry per BEIR subset, so each gets its own dataset_key and
-# therefore its own artifacts/ and experimental_results/ folders.
 for _subset in BEIR_SUBSETS:
     REGISTRY[f"beir_{_subset}"] = partial(load_beir_dataset, subset=_subset)
 

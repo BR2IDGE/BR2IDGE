@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 from search_recs.datasets import ensure_dataset
 
+from search_recs.datasets import beir_files
+
 try:
     from search_recs.recs.dataloader import RecsDataLoader
 except Exception:
@@ -1007,6 +1009,9 @@ class RetrievalAsUserConfig:
     bm25_config: Optional[Dict[str, Any]] = None
     label_mode: str = "binary"
 
+    subset: str = "nfcorpus"
+    qrels_splits: Optional[List[str]] = None
+
 
 class RetrievalAsUserDataLoader(RecsDataLoader):
     def __init__(self, full_config: dict):
@@ -1021,6 +1026,8 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             self.dataset_path = ensure_dataset("amazonElectronics")
         elif mode == "tag_query":
             self.dataset_path = ensure_dataset("lastfm-dataset-360K")
+        elif mode in {"beir", "beir_query"}:
+            self.dataset_path = beir_files.subset_path(self.cfg.subset)
         else:
             self.dataset_path = _resolve_dataset_path(self.cfg.path)
 
@@ -1085,6 +1092,9 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
 
             bm25_config=bm25_cfg,
             label_mode=str(dl.get("label_mode", "binary")),
+
+            subset=str(dl.get("subset", "nfcorpus")).strip().lower(),
+            qrels_splits=list(dl.get("qrels_splits") or ["test"]),
         )
 
     def load_data(self) -> pd.DataFrame:
@@ -1097,9 +1107,12 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             return self._build_lastfm_tag_query_as_user()
         if mode in {"amazon_category", "amazon_electronics", "amazon"}:
             return self._build_amazon_category_query_as_user()
+        if mode in {"beir", "beir_query"}:
+            return self._build_beir_query_as_user()
 
         raise ValueError(
-            f"Unknown mode='{self.cfg.mode}'. Use 'movielens_genome', 'profile_query', 'tag_query', or 'amazon_category'."
+            f"Unknown mode='{self.cfg.mode}'. Use 'movielens_genome', 'profile_query', "
+            f"'tag_query', 'amazon_category', or 'beir'."
         )
 
     def _build_movielens_query_as_user(self) -> pd.DataFrame:
@@ -1184,6 +1197,106 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
         else:
             df["label"] = 1.0
 
+        return df[["user", "item", "label", "time", "score"]].copy()
+
+    def _build_beir_query_as_user(self) -> pd.DataFrame:
+
+        bm25_cfg = dict(self.cfg.bm25_config or {})
+        doc_col = bm25_cfg.get("doc_col", "document")
+        doc_id_col = bm25_cfg.get("doc_id_col", "document_id")
+
+        base_path = self.dataset_path
+        print(f"[RetrievalAsUser][BEIR] subset={self.cfg.subset} | path={base_path}")
+
+        corpus = beir_files.read_corpus(base_path)
+        queries = beir_files.read_queries(base_path)
+        qrels = beir_files.read_qrels(base_path, self.cfg.qrels_splits or ["test"], min_score=1.0)
+
+        judged_ids = set(qrels["query_id"].unique())
+        queries = queries[queries["query_id"].isin(judged_ids)]
+        print(
+            f"[RetrievalAsUser][BEIR] Corpus: {len(corpus)} docs | "
+            f"queries with judgements in {list(self.cfg.qrels_splits or ['test'])}: {len(queries)}"
+        )
+
+        unique_docs = corpus[["document_id", "document"]].rename(
+            columns={"document_id": doc_id_col, "document": doc_col}
+        )
+
+        _ensure_nltk()
+        bm25 = _make_bm25_model(_bm25_cfg_for_indexing(bm25_cfg), dataset_path=base_path)
+        bm25.preprocess(train_data=unique_docs)
+        bm25.fit()
+
+        query_ids = queries["query_id"].tolist()
+        query_texts = queries["search_query"].tolist()
+
+        if self.cfg.query_limit is not None:
+            ql = int(self.cfg.query_limit)
+            if ql > 0 and len(query_ids) > ql:
+                rng = np.random.default_rng(self.cfg.seed)
+                pick = rng.choice(len(query_ids), size=ql, replace=False)
+                pick.sort()
+                query_ids = [query_ids[i] for i in pick]
+                query_texts = [query_texts[i] for i in pick]
+
+        print(f"[RetrievalAsUser][BEIR] Queries to search: {len(query_ids)} (top_k={self.cfg.top_k})")
+
+        rows: List[Dict[str, Any]] = []
+        chunks: List[pd.DataFrame] = []
+        flush_every = max(10_000, int(self.cfg.flush_every))
+
+        for q_idx, (qid, qtext) in enumerate(zip(query_ids, query_texts)):
+            top_pairs = _bm25_search_topk(bm25, qtext, top_k=int(self.cfg.top_k))
+            if not top_pairs:
+                continue
+
+            u = f"retrieval::{qid}"
+            for rank, (doc_id, score) in enumerate(top_pairs):
+                try:
+                    s_val = float(score)
+                except Exception:
+                    continue
+                if s_val <= 0:
+                    continue
+                rows.append({"user": u, "item": str(doc_id), "time": int(rank), "score": s_val})
+
+            if len(rows) >= flush_every:
+                chunks.append(pd.DataFrame(rows))
+                rows = []
+
+            if int(self.cfg.progress_every) > 0 and (q_idx + 1) % int(self.cfg.progress_every) == 0:
+                built = sum(len(c) for c in chunks) + len(rows)
+                print(f"[RetrievalAsUser][BEIR] {q_idx+1}/{len(query_ids)} | rows={built}")
+
+        if rows:
+            chunks.append(pd.DataFrame(rows))
+
+        df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+        if df.empty:
+            raise ValueError(
+                f"[RetrievalAsUser][BEIR] BM25 returned no hits for subset '{self.cfg.subset}'."
+            )
+
+        stats = (
+            df.groupby("user")["score"].agg(["min", "max"]).reset_index()
+            .rename(columns={"min": "_min", "max": "_max"})
+        )
+        df = df.merge(stats, on="user", how="left")
+        df["score"] = (df["score"] - df["_min"]) / (df["_max"] - df["_min"] + 1e-9)
+        df = df.drop(columns=["_min", "_max"])
+
+        if str(self.cfg.label_mode).lower() == "dense":
+            df["label"] = df["score"].astype(float)
+        else:
+            df["label"] = 1.0
+
+        per_user = df.groupby("user").size()
+        print(
+            f"[RetrievalAsUser][BEIR] interactions={len(df)} | query-users={df['user'].nunique()} | "
+            f"items={df['item'].nunique()} | items/user: min={per_user.min()} "
+            f"mean={per_user.mean():.1f} max={per_user.max()}"
+        )
         return df[["user", "item", "label", "time", "score"]].copy()
 
     def _build_profile_query_as_user(self) -> pd.DataFrame:

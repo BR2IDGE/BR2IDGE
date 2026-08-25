@@ -1,0 +1,26 @@
+{
+  "dataloader": {
+    "dataset_name": "beir_nfcorpus",
+    "path": "beir-nfcorpus",
+    "subset": "nfcorpus",
+    "qrels_splits": [
+      "test"
+    ],
+    "min_score": 1,
+    "label_mode": "binary",
+    "min_user_interactions": 2,
+    "query_limit": null,
+    "seed": 42,
+    "num_folds": 3
+  },
+  "features": {
+    "sparse_features": [
+      "user",
+      "item"
+    ],
+    "dense_features": [
+      "label",
+      "time"
+    ]
+  }
+}

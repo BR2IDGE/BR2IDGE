@@ -61,7 +61,7 @@ BEIR_BASE_URL = os.environ.get(
     "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets",
 )
 
-BEIR_SUBSETS = ("scifact", "nfcorpus", "arguana", "scidocs")
+BEIR_SUBSETS = ("nfcorpus",)
 
 for _subset in BEIR_SUBSETS:
     DATASETS[f"beir-{_subset}"] = {
@@ -155,8 +155,6 @@ def _move_extracted_dataset(tmp_dir: Path, target_dir: Path, required: Iterable[
 
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     if target_dir.exists():
-        # The caller only reaches here when required files are missing. Keep any
-        # existing partial files and copy the extracted files on top.
         for item in source.iterdir():
             dest = target_dir / item.name
             if dest.exists():
@@ -181,7 +179,7 @@ def _download_file(url: str, dest: Path) -> None:
     response = requests.get(
         url,
         stream=True,
-        timeout=(30, 120),  # (connect, read) — read timeout is per-chunk, not total
+        timeout=(30, 120), 
         headers={"User-Agent": "BR2IDGE-datasets/1.0"},
     )
     response.raise_for_status()
@@ -239,7 +237,6 @@ def _download_zenodo_bundle_and_extract_archives(archives_dir: Path) -> None:
 
 
 def _ensure_archive_from_url(archive_path: Path, url: str) -> None:
-    """Fetch a single dataset archive from its own URL (used by the BEIR subsets)."""
     if _looks_like_zip(archive_path):
         return
 
@@ -248,11 +245,6 @@ def _ensure_archive_from_url(archive_path: Path, url: str) -> None:
 
 
 def _ensure_archive_from_zenodo(archive_path: Path) -> None:
-    """
-    Make sure `archive_path` (e.g. data/_archives/ml-25m.zip) exists, fetching it
-    from Zenodo if needed. Downloading the bundle populates every per-dataset
-    archive at once, so this is a no-op after the first successful call.
-    """
     if _looks_like_zip(archive_path):
         return
 

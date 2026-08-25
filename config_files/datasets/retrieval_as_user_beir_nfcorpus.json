@@ -1,0 +1,28 @@
+{
+  "dataloader": {
+    "dataset_name": "retrieval_as_user",
+    "mode": "beir",
+    "subset": "nfcorpus",
+    "path": "beir-nfcorpus",
+    "qrels_splits": [
+      "test"
+    ],
+    "top_k": 100,
+    "seed": 42,
+    "query_limit": 2000,
+    "label_mode": "binary",
+    "num_folds": 3,
+    "progress_every": 200,
+    "bm25_config": {
+      "index_name": "bm25_index_beir_nfcorpus_rau",
+      "model": "bm25",
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "hyperparams": {
+        "b": 0.75,
+        "k1": 1.5
+      }
+    }
+  }
+}

@@ -1,112 +1,18 @@
-import json
-from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from search_recs.datasets import ensure_dataset
+from search_recs.datasets.beir_files import (
+    DEFAULT_SUBSET,
+    read_corpus,
+    read_qrels,
+    read_queries,
+    subset_path,
+)
 from .base_dataloader import BuildConfig
 
-DEFAULT_SUBSET = "scifact"
-
 CORPUS_CATEGORY = "corpus"
-
-_QRELS_COLUMN_ALIASES = {
-    "query-id": "query_id",
-    "query_id": "query_id",
-    "qid": "query_id",
-    "corpus-id": "document_id",
-    "corpus_id": "document_id",
-    "doc-id": "document_id",
-    "doc_id": "document_id",
-    "score": "score",
-    "rel": "score",
-    "relevance": "score",
-}
-
-
-def _read_jsonl(path: Path) -> List[dict]:
-    rows: List[dict] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def _build_document(title, text) -> str:
-    title = str(title or "").strip()
-    text = str(text or "").strip()
-    if title and text:
-        return f"{title}\n{text}"
-    return title or text
-
-
-def _load_corpus(base_path: Path) -> pd.DataFrame:
-    rows = _read_jsonl(base_path / "corpus.jsonl")
-    corpus = pd.DataFrame(
-        {
-            "document_id": [str(r.get("_id", "")).strip() for r in rows],
-            "title": [str(r.get("title", "") or "").strip() for r in rows],
-            "document": [_build_document(r.get("title"), r.get("text")) for r in rows],
-        }
-    )
-    corpus = corpus[(corpus["document_id"] != "") & (corpus["document"].str.strip() != "")]
-    return corpus.drop_duplicates(subset=["document_id"]).reset_index(drop=True)
-
-
-def _load_queries(base_path: Path) -> pd.DataFrame:
-    rows = _read_jsonl(base_path / "queries.jsonl")
-    queries = pd.DataFrame(
-        {
-            "query_id": [str(r.get("_id", "")).strip() for r in rows],
-            "search_query": [str(r.get("text", "") or "").strip() for r in rows],
-        }
-    )
-    queries = queries[(queries["query_id"] != "") & (queries["search_query"] != "")]
-    return queries.drop_duplicates(subset=["query_id"]).reset_index(drop=True)
-
-
-def _load_qrels(base_path: Path, splits: Sequence[str], min_score: float) -> pd.DataFrame:
-    qrels_dir = base_path / "qrels"
-    frames = []
-    missing = []
-
-    for split in splits:
-        path = qrels_dir / f"{split}.tsv"
-        if not path.exists():
-            missing.append(split)
-            continue
-
-        df = pd.read_csv(path, sep="\t", dtype=str)
-        df.columns = [_QRELS_COLUMN_ALIASES.get(str(c).strip().lower(), str(c).strip()) for c in df.columns]
-
-        for required in ("query_id", "document_id", "score"):
-            if required not in df.columns:
-                raise ValueError(
-                    f"[BEIR] {path} is missing the '{required}' column. Found: {list(df.columns)}"
-                )
-
-        df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0.0)
-        df = df[df["score"] >= float(min_score)]
-        df["qrels_split"] = split
-        frames.append(df[["query_id", "document_id", "score", "qrels_split"]])
-
-    if missing:
-        print(f"[BEIR] No qrels file for split(s) {missing} (this is normal for test-only subsets).")
-
-    if not frames:
-        raise FileNotFoundError(
-            f"[BEIR] None of the requested qrels splits {list(splits)} exist under {qrels_dir}."
-        )
-
-    qrels = pd.concat(frames, ignore_index=True)
-    qrels["query_id"] = qrels["query_id"].astype(str).str.strip()
-    qrels["document_id"] = qrels["document_id"].astype(str).str.strip()
-    return qrels
-
 
 def _three_way_split(frame: pd.DataFrame, cfg: BuildConfig):
     test_size = float(cfg.test_size)
@@ -126,6 +32,7 @@ def _three_way_split(frame: pd.DataFrame, cfg: BuildConfig):
 def _split_pairs(
     pairs: pd.DataFrame, cfg: BuildConfig, split_by: str = "query"
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
     split_by = str(split_by or "query").strip().lower()
 
     if split_by == "pair":
@@ -151,6 +58,7 @@ def _split_pairs(
 def _corpus_filler_rows(
     corpus: pd.DataFrame, already_indexed: set, subset: str, max_snippet_chars: int
 ) -> pd.DataFrame:
+
     columns = ["search_query", "document", "document_id", "category"]
 
     filler = corpus[~corpus["document_id"].isin(already_indexed)].copy()
@@ -184,12 +92,12 @@ def load_beir_dataset(
             "standard query/document task instead."
         )
 
-    base_path = ensure_dataset(f"beir-{subset}")
+    base_path = subset_path(subset)
     print(f"[BEIR] Subset '{subset}' from {base_path}")
 
-    corpus = _load_corpus(base_path)
-    queries = _load_queries(base_path)
-    qrels = _load_qrels(base_path, splits, min_score)
+    corpus = read_corpus(base_path)
+    queries = read_queries(base_path)
+    qrels = read_qrels(base_path, splits, min_score)
 
     print(
         f"[BEIR] Corpus: {len(corpus)} docs | Queries: {len(queries)} | "
