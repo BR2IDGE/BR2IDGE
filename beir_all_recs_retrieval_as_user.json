@@ -23,7 +23,13 @@
   ],
   "execution": {
     "skip": [],
-    "force": [],
+    "force": [
+      "preprocess",
+      "features",
+      "train",
+      "index",
+      "eval"
+    ],
     "no_save": [],
     "n_runs": 2,
     "window_size": 0.05
