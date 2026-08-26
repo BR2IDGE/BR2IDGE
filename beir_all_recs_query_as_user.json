@@ -9,25 +9,16 @@
   },
   "model": [
     {
-      "name": "LightFMModel"
+      "name": "ItemKNNModel"
     },
     {
       "name": "DeepFMModel"
     },
     {
-      "name": "Bert4REC"
-    },
-    {
       "name": "LightGCNModel"
     },
     {
-      "name": "ItemKNNModel"
-    },
-    {
-      "name": "ALSModel"
-    },
-    {
-      "name": "NMFRecommender"
+      "name": "Bert4REC"
     }
   ],
   "execution": {
