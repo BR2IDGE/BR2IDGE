@@ -4,6 +4,7 @@ from search_recs.recs.dataloader.lastfm import LastFM360KDataLoader
 from search_recs.recs.dataloader.generic import GenericRecsDataLoader
 from search_recs.recs.dataloader.amazonEletronics import AmazonElectronicsDataLoader
 from search_recs.recs.dataloader.retrieval_as_user import RetrievalAsUserDataLoader
+from search_recs.recs.dataloader.hybrid import HybridDatasetDataLoader
 
 __all__ = [
     "RecsDataLoader",
@@ -11,7 +12,8 @@ __all__ = [
     "LastFM360KDataLoader",
     "GenericRecsDataLoader",
     "AmazonElectronicsDataLoader",
-    "RetrievalAsUserDataLoader"
+    "RetrievalAsUserDataLoader",
+    "HybridDatasetDataLoader",
 ]
 
 REGISTRY = {
@@ -20,6 +22,8 @@ REGISTRY = {
     "generic": GenericRecsDataLoader,
     "amazonElectronics": AmazonElectronicsDataLoader,
     "retrieval_as_user": RetrievalAsUserDataLoader,
+    "hybrid": HybridDatasetDataLoader,
+    "HybridDataset": HybridDatasetDataLoader,
 }
 
 def get_loader(name: str):

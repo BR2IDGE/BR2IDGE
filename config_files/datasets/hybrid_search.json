@@ -1,0 +1,19 @@
+{
+  "dataloader": {
+    "dataset_name": "hybrid",
+    "path": "data/hybrid_dataset/hybrid_dataset",
+    "test_size": 0.15,
+    "val_size": 0.10,
+    "seed": 42,
+    "relevant_only": true,
+    "head_train": null,
+    "head_val": null,
+    "head_test": null
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

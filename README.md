@@ -525,3 +525,16 @@ Typical output files include:
 * `<experiment_name>_metrics_all.csv` (when multi-model stats are enabled)
 * `<experiment_name>_wilcoxon_marked.csv`, `<experiment_name>_wilcoxon_diagnostics.csv`
 * `<experiment_name>_ttest_marked.csv`, `<experiment_name>_ttest_diagnostics.csv`
+## Hybrid Amazon dataset
+
+The dataset under `data/hybrid_dataset/hybrid_dataset` supports both framework
+tasks. Recommendation consumes the temporal folds in `splits.json`; search
+splits complete query groups, preventing qrels for the same query from leaking
+between train, validation, and test.
+
+Run the examples with:
+
+```bash
+python framework.py --config hybrid_recs_example.json
+python framework.py --config hybrid_search_example.json
+```

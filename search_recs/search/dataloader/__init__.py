@@ -5,13 +5,15 @@ from .generic_csv import load_generic_csv_dataset
 from .amazonEletronics import get_loader as load_amazon_search_dataset
 
 from .lastfm import load_lastfm_dataset as load_lastfm_dataset
+from .hybrid import load_hybrid_dataset
 
 REGISTRY = {
     "goodbooks": load_goodbooks_dataset,
     "movielens": load_movielens_dataset,
     "lastfm": load_lastfm_dataset,  
     "generic_csv": load_generic_csv_dataset,
-    "amazonelectronics": load_amazon_search_dataset
+    "amazonelectronics": load_amazon_search_dataset,
+    "hybrid": load_hybrid_dataset,
 }
 
 def get_loader(name: str):

@@ -1,0 +1,20 @@
+{
+  "experiment_name": "Hybrid_recommendation",
+  "task_type": "recs",
+  "output_dir": "artifacts",
+  "dataset": {"name": "hybrid"},
+  "model": [{"name": "LightFMModel"}],
+  "execution": {
+    "force": ["preprocess", "features", "eval", "train"],
+    "skip": [],
+    "no_save": [],
+    "n_runs": 1,
+    "window_size": 0.05
+  },
+  "evaluation": {
+    "n_pos_samples": 20,
+    "n_neg_samples": 200,
+    "top_ks": [5, 10, 20],
+    "metrics": ["NDCG", "RECALL", "PRECISION"]
+  }
+}
