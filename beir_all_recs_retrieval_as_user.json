@@ -12,6 +12,9 @@
       "name": "ItemKNNModel"
     },
     {
+      "name": "LightFMModel"
+    },
+    {
       "name": "DeepFMModel"
     },
     {
@@ -31,7 +34,7 @@
       "eval"
     ],
     "no_save": [],
-    "n_runs": 2,
+    "n_runs": 6,
     "window_size": 0.05
   },
   "evaluation": {
@@ -52,9 +55,9 @@
       "tests": [
         "ttest_rel"
       ],
-      "min_runs": 2,
+      "min_runs": 6,
       "alpha": 0.05,
-      "symbol": "\u25b2"
+      "symbol": "▲"
     }
   }
 }
