@@ -124,9 +124,7 @@ class Bert4REC(BaseRecsModel):
         print("[Bert4Rec] Training finished.")
 
     def prediction(self, data_input: pd.DataFrame, **kwargs) -> tuple[list[float], list[float]]:
-        """
-        Predicts scores for user-item pairs using historical sequences.
-        """
+
         device = self.config['device']
         u_map = self.dataset.field2token_id['user']
         i_map = self.dataset.field2token_id['item']
@@ -148,6 +146,8 @@ class Bert4REC(BaseRecsModel):
             if hist:
                 seqs[idx, :len(hist)] = hist
                 lengths[idx] = len(hist)
+
+        lengths = np.maximum(lengths, 1)
 
         self.model.eval()
         with torch.no_grad():
