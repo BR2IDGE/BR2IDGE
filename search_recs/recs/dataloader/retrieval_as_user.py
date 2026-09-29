@@ -1011,6 +1011,38 @@ class RetrievalAsUserConfig:
 
     subset: str = "nfcorpus"
     qrels_splits: Optional[List[str]] = None
+    min_score: float = 1.0
+    # "retrieval_tail": legacy, the test set is the tail of the BM25 ranking itself.
+    # "new": test = qrels NOT in the retrieved history (relevant docs the recommender must add).
+    # "all": test = every qrel of the query (re-ranking setting, comparable to native search).
+    target_mode: str = "retrieval_tail"
+
+
+TARGET_MODES = {"retrieval_tail", "new", "all"}
+
+
+def _attach_qrels_targets(history: pd.DataFrame, judged: pd.DataFrame, target_mode: str, tag: str) -> pd.DataFrame:
+    """Tag the retrieved set as 'history' (train) and the query's relevant qrels as 'target' (test).
+
+    ``judged`` holds the relevant (user, item) pairs of the searched queries, already filtered
+    by the relevance threshold.
+    """
+    history = history[["user", "item", "label", "time", "score"]].copy()
+    history["role"] = "history"
+
+    target = judged[["user", "item"]].astype(str).drop_duplicates()
+    hist_pairs = set(zip(history["user"], history["item"]))
+    in_hist = np.array([p in hist_pairs for p in zip(target["user"], target["item"])], dtype=bool)
+    if target_mode == "new":
+        target = target[~in_hist]
+
+    target = target.assign(label=1.0, time=0, score=0.0, role="target")
+    print(
+        f"[RetrievalAsUser][{tag}] target_mode={target_mode} | relevant qrels of searched queries={len(in_hist)} | "
+        f"already in retrieved history={int(in_hist.sum())} ({in_hist.mean() if len(in_hist) else 0:.1%}) | "
+        f"target rows={len(target)} | query-users with target={target['user'].nunique()}"
+    )
+    return pd.concat([history, target], ignore_index=True)
 
 
 class RetrievalAsUserDataLoader(RecsDataLoader):
@@ -1096,7 +1128,16 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
 
             subset=str(dl.get("subset", "nfcorpus")).strip().lower(),
             qrels_splits=list(dl.get("qrels_splits") or ["test"]),
+            min_score=float(dl.get("min_score", 1.0)),
+            target_mode=self._check_target_mode(dl.get("target_mode", "retrieval_tail")),
         )
+
+    @staticmethod
+    def _check_target_mode(value: Any) -> str:
+        mode = str(value).strip().lower()
+        if mode not in TARGET_MODES:
+            raise ValueError(f"[RetrievalAsUser] target_mode must be one of {sorted(TARGET_MODES)}, got '{value}'.")
+        return mode
 
     def load_data(self) -> pd.DataFrame:
         mode = str(self.cfg.mode).lower().strip()
@@ -1287,7 +1328,24 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
         else:
             df["label"] = 1.0
 
-        return df[["user", "item", "label", "time", "score"]].copy()
+        if self.cfg.target_mode == "retrieval_tail":
+            return df[["user", "item", "label", "time", "score"]].copy()
+
+        # Relevant qrels (>= qrels_min_relevance) whose passage is in the candidate pool,
+        # the same pool the BM25 history is retrieved from.
+        min_rel = int(raw.get("qrels_min_relevance", 2))
+        searched = {f"retrieval::{qid}" for qid, _ in queries}
+        rel = qrels[(qrels["relevance"] >= min_rel) & qrels["document_id"].isin(set(candidates["document_id"]))]
+        judged = pd.DataFrame({
+            "user": "retrieval::" + rel["query_id"].astype(str),
+            "item": rel["document_id"].astype(str),
+        })
+        judged = judged[judged["user"].isin(searched)]
+        print(
+            f"[RetrievalAsUser][MSMARCO] relevant qrels (>= {min_rel}): {int((qrels['relevance'] >= min_rel).sum())} | "
+            f"inside candidate pool: {len(rel)}"
+        )
+        return _attach_qrels_targets(df, judged, self.cfg.target_mode, "MSMARCO")
 
     def _build_beir_query_as_user(self) -> pd.DataFrame:
 
@@ -1300,7 +1358,7 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
 
         corpus = beir_files.read_corpus(base_path)
         queries = beir_files.read_queries(base_path)
-        qrels = beir_files.read_qrels(base_path, self.cfg.qrels_splits or ["test"], min_score=1.0)
+        qrels = beir_files.read_qrels(base_path, self.cfg.qrels_splits or ["test"], min_score=self.cfg.min_score)
 
         judged_ids = set(qrels["query_id"].unique())
         queries = queries[queries["query_id"].isin(judged_ids)]
@@ -1387,7 +1445,15 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             f"items={df['item'].nunique()} | items/user: min={per_user.min()} "
             f"mean={per_user.mean():.1f} max={per_user.max()}"
         )
-        return df[["user", "item", "label", "time", "score"]].copy()
+        if self.cfg.target_mode == "retrieval_tail":
+            return df[["user", "item", "label", "time", "score"]].copy()
+
+        judged = pd.DataFrame({
+            "user": "retrieval::" + qrels["query_id"].astype(str),
+            "item": qrels["document_id"].astype(str),
+        })
+        judged = judged[judged["user"].isin({f"retrieval::{q}" for q in query_ids})]
+        return _attach_qrels_targets(df, judged, self.cfg.target_mode, "BEIR")
 
     def _build_profile_query_as_user(self) -> pd.DataFrame:
         positives, item_docs = _load_profile_query_inputs(

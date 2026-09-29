@@ -7,6 +7,8 @@
     "qrels_splits": [
       "test"
     ],
+    "min_score": 1,
+    "target_mode": "new",
     "top_k": 100,
     "seed": 42,
     "query_limit": 2000,

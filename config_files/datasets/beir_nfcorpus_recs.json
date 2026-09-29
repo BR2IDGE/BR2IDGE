@@ -11,7 +11,8 @@
     "min_user_interactions": 2,
     "query_limit": null,
     "seed": 42,
-    "num_folds": 3
+    "num_folds": 3,
+    "order_by": "random"
   },
   "features": {
     "sparse_features": [

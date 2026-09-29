@@ -6,6 +6,9 @@
     "candidate_limit": 1000,
     "qrels_min_relevance": 2,
     "seed": 42,
-    "head_test": null
+    "head_test": null,
+    "filter_relevance": true,
+    "order_by": "random",
+    "label_mode": "binary"
   }
 }

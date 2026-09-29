@@ -31,6 +31,11 @@ class BeirQueryAsUserDataLoader(RecsDataLoader):
         self.min_user_interactions = int(dl.get("min_user_interactions", 2) or 0)
         self.query_limit: Optional[int] = dl.get("query_limit")
         self.seed = int(dl.get("seed", 42))
+        # "score": qrels ordered by grade, so the temporal split puts the highest grades in test
+        # (legacy behaviour). "random": seeded shuffle within each query, grade-neutral split.
+        self.order_by = str(dl.get("order_by", "score")).strip().lower()
+        if self.order_by not in {"score", "random"}:
+            raise ValueError(f"[BEIR-QueryAsUser] order_by must be 'score' or 'random', got '{self.order_by}'.")
 
         self.dataset_path = subset_path(self.subset)
 
@@ -89,7 +94,10 @@ class BeirQueryAsUserDataLoader(RecsDataLoader):
         )
 
         out = out.sort_values(["user", "score", "item"], ascending=True, kind="mergesort")
+        if self.order_by == "random":
+            out = out.sample(frac=1.0, random_state=self.seed).sort_values("user", kind="mergesort")
         out["time"] = out.groupby("user", sort=False).cumcount()
+        print(f"[BEIR-QueryAsUser] order_by={self.order_by} (defines which judgements go to test)")
 
         if self.label_mode == "graded":
             out["label"] = out["score"]

@@ -38,6 +38,16 @@ class MsMarcoTrecDlRecsDataLoader(RecsDataLoader):
             "cache_processed": True,
         }
         self._ingest = MsMarcoTrecDlLoader(build_cfg, **ingest_kwargs)
+        self.seed = int(dl.get("seed", 42))
+        self.qrels_min_relevance = int(ingest_kwargs["qrels_min_relevance"])
+        # Legacy behaviour keeps every judged pair (grades 0-3) regardless of qrels_min_relevance.
+        self.filter_relevance = bool(dl.get("filter_relevance", False))
+        # "file": qrels file order defines which judgements go to test (legacy);
+        # "score": ascending grade, so the highest grades go to test; "random": seeded shuffle.
+        self.order_by = str(dl.get("order_by", "file")).strip().lower()
+        if self.order_by not in {"file", "score", "random"}:
+            raise ValueError(f"[MSMARCO/Recs][QueryAsUser] order_by must be 'file', 'score' or 'random', got '{self.order_by}'.")
+        self.label_mode = str(dl.get("label_mode", "graded")).strip().lower()
 
     def load_data(self) -> pd.DataFrame:
         return self.hybrid_load_data()
@@ -69,8 +79,25 @@ class MsMarcoTrecDlRecsDataLoader(RecsDataLoader):
         if df.empty:
             raise ValueError("[MSMARCO/Recs][QueryAsUser] No qrels pairs overlap with the candidate pool.")
 
+        if self.filter_relevance:
+            before = len(df)
+            df = df[df["label"] >= self.qrels_min_relevance]
+            print(f"[MSMARCO/Recs][QueryAsUser] relevance >= {self.qrels_min_relevance}: {before} -> {len(df)} pairs")
+
+        if self.order_by == "score":
+            df = df.sort_values(["user", "label", "item"], kind="mergesort")
+        elif self.order_by == "random":
+            df = df.sample(frac=1.0, random_state=self.seed).sort_values("user", kind="mergesort")
+        if self.order_by != "file":
+            df["time"] = df.groupby("user", sort=False).cumcount()
+
+        if self.label_mode == "binary":
+            df["label"] = (df["label"] > 0).astype(float)
+
+        df = df.reset_index(drop=True)
         print(
             f"[MSMARCO/Recs][QueryAsUser] pairs={len(df)} | "
-            f"users(queries)={df['user'].nunique()} | items(docs)={df['item'].nunique()}"
+            f"users(queries)={df['user'].nunique()} | items(docs)={df['item'].nunique()} | "
+            f"filter_relevance={self.filter_relevance} order_by={self.order_by} label_mode={self.label_mode}"
         )
         return df

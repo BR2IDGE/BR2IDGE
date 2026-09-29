@@ -1,0 +1,43 @@
+{
+  "experiment_name": "BEIR_NFCorpus_LightFM_RetrievalAsUser",
+  "task_type": "recs",
+  "hybrid": true,
+  "hybridStrategie": "retrieval-as-user",
+  "output_dir": "artifacts",
+  "dataset": {
+    "name": "beir_nfcorpus"
+  },
+  "model": [
+    {
+      "name": "LightFMModel"
+    }
+  ],
+  "execution": {
+    "skip": [],
+    "force": [
+      "preprocess",
+      "features",
+      "train",
+      "index",
+      "eval"
+    ],
+    "no_save": [],
+    "n_runs": 6,
+    "window_size": 0.05
+  },
+  "evaluation": {
+    "n_pos_samples": 20,
+    "n_neg_samples": 200,
+    "top_ks": [
+      5,
+      10,
+      20,
+      50
+    ],
+    "metrics": [
+      "NDCG",
+      "PRECISION",
+      "RECALL"
+    ]
+  }
+}

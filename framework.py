@@ -967,7 +967,7 @@ def build_recs_eval_df(train_df: pd.DataFrame, test_df: pd.DataFrame, n_neg_samp
     
     return eval_df
 
-def evaluate_recs_userwise(model, train_df, test_df, eval_conf: dict, seed: int):
+def evaluate_recs_userwise(model, train_df, test_df, eval_conf: dict, seed: int, dump_dir: Path | None = None):
 
     from search_recs import metric as metric_module
 
@@ -1005,11 +1005,12 @@ def evaluate_recs_userwise(model, train_df, test_df, eval_conf: dict, seed: int)
 
     users_used = 0
     sums = {k: {m: 0.0 for m in active_metrics_objs} for k in top_ks}
+    per_user_rows = []
 
     print(f"[eval-recs] Calculating user-wise metrics for {eval_df['user'].nunique()} users...")
-    
-    for _, group in eval_df.groupby("user", sort=False):
- 
+
+    for user, group in eval_df.groupby("user", sort=False):
+
         y_true = pd.to_numeric(group["label"], errors="coerce").fillna(0.0).tolist()
         y_pred = pd.to_numeric(group["_score"], errors="coerce").fillna(-1e30).tolist()
 
@@ -1018,17 +1019,43 @@ def evaluate_recs_userwise(model, train_df, test_df, eval_conf: dict, seed: int)
 
         users_used += 1
 
+        # Candidates the model could not score (unknown user/item, e.g. cold items in LightFM
+        # get -inf) are tracked so structural analyses can explain zero scores.
+        pos = np.asarray(y_true) > 0
+        unscored = ~np.isfinite(np.asarray(y_pred, dtype=float)) | (np.asarray(y_pred, dtype=float) <= -1e29)
+        user_info = {
+            "user": user,
+            "n_pos": int(pos.sum()),
+            "n_cand": len(y_true),
+            "n_pos_unscored": int((pos & unscored).sum()),
+            "n_neg_unscored": int((~pos & unscored).sum()),
+        }
+
         for k in top_ks:
             for name, metric_obj in active_metrics_objs.items():
                 try:
                     score = metric_obj.evaluate_metric(y_pred=y_pred, y_true=y_true, topk=int(k))
                     sums[k][name] += float(score)
+                    per_user_rows.append({**user_info, "K": int(k), "metric": name, "value": float(score)})
                 except Exception as e:
                     if users_used == 1:
                         print(f"[metric-error] Failed to calculate {name} at K={k}: {e}")
 
     if users_used == 0:
         raise ValueError("[eval-recs] No valid user (with positives) found for evaluation.")
+
+    if dump_dir is not None:
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(per_user_rows).to_csv(dump_dir / "per_user_metrics.csv", index=False)
+        scores_out = eval_df[["user", "item", "label", "_score"]].copy()
+        scores_out["user"] = scores_out["user"].astype(str)
+        scores_out["item"] = scores_out["item"].astype(str)
+        scores_out["label"] = pd.to_numeric(scores_out["label"], errors="coerce")
+        try:
+            scores_out.to_parquet(dump_dir / "eval_scores.parquet", index=False)
+        except Exception as e:
+            print(f"[eval-recs] Warning: could not save eval_scores.parquet: {e}")
+        print(f"[eval-recs] Per-user metrics and candidate scores saved to {dump_dir}")
 
     results = {}
     for k in top_ks:
@@ -1396,6 +1423,7 @@ def run_eval( task_type, model, test_data, exp_config, run_dir, skip: set, force
             test_df=test_data,
             eval_conf=eval_conf,
             seed=seed,
+            dump_dir=None if no_save_eval else run_dir,
         )
 
     results_norm = normalize_results_dict(results)
@@ -1486,6 +1514,45 @@ def split_recs_dataset_temporal(full_data: pd.DataFrame, fold: int = 0, num_fold
           f"Train: {len(train_df)} | Test: {len(test_df)}")
     
     return train_df, test_df
+
+
+def split_recs_by_role(full_data: pd.DataFrame, max_test_pos_per_user: int | None = None, seed: int = 42):
+    """Split for dataloaders that tag rows as 'history' (train) or 'target' (test)."""
+    roles = set(full_data["role"].dropna().unique())
+    unknown = roles - {"history", "target"}
+    if unknown:
+        raise ValueError(f"[split-role] Unknown role value(s): {sorted(unknown)}")
+
+    train_df = full_data[full_data["role"] == "history"].drop(columns="role").reset_index(drop=True)
+    test_df = full_data[full_data["role"] == "target"].drop(columns="role").reset_index(drop=True)
+
+    if max_test_pos_per_user is not None and len(test_df):
+        m = int(max_test_pos_per_user)
+        test_df = (test_df.sample(frac=1.0, random_state=seed)
+                   .groupby("user", sort=False).head(m).reset_index(drop=True))
+
+    if test_df.empty:
+        raise ValueError("[split-role] No 'target' rows: nothing to evaluate.")
+    return train_df, test_df
+
+
+def save_split_matrices(out_dir: Path, run_idx: int, fold: int, run_id: str, train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """Persist the adapted user-item matrices of a run for offline structural analysis."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"run{run_idx:02d}_fold{fold:02d}"
+    for name, df in (("train", train_df), ("test", test_df)):
+        out = df.copy()
+        out["user"] = out["user"].astype(str)
+        out["item"] = out["item"].astype(str)
+        try:
+            out.to_parquet(out_dir / f"{stem}_{name}.parquet", index=False)
+        except Exception as e:
+            print(f"[main] Warning: full {name} matrix not saved ({e}); saving user/item/label only.")
+            out[[c for c in ("user", "item", "label", "time") if c in out.columns]].to_parquet(
+                out_dir / f"{stem}_{name}.parquet", index=False)
+    save_json(out_dir / f"{stem}_meta.json", {"run_id": run_id, "run_idx": run_idx, "fold": fold,
+                                              "n_train": len(train_df), "n_test": len(test_df)})
+    print(f"[main] Split matrices saved to {out_dir}/{stem}_{{train,test}}.parquet")
 
 
 def main(args):
@@ -1599,6 +1666,11 @@ def main(args):
         train_data = None
         test_data = None
 
+    role_split = task_type == "recs" and full_recs_data is not None and "role" in full_recs_data.columns
+    if role_split:
+        print("[main] Dataloader provided explicit history/target roles: the split is fixed, so "
+              "runs differ only by the model seed (run_seed is injected into the model parameters).")
+
     print(f"[data] Loaded shapes: Train={_safe_len(train_data)}, Test={_safe_len(test_data)}, FullRecs={_safe_len(full_recs_data)}")
 
     for run_idx in range(1, n_runs + 1):
@@ -1637,15 +1709,23 @@ def main(args):
                 mode_val = "linear"
             seed_val = int(dl_params.get("seed", 42))
 
-            train_data, test_data = split_recs_dataset_temporal(
-                full_data=full_recs_data,
-                fold=current_fold,
-                num_folds=num_folds_val,
-                floatseed=seed_val,
-                max_test_pos_per_user=max_pos,
-                window_size=window_size_val 
-            )
+            if role_split:
+                train_data, test_data = split_recs_by_role(full_recs_data, max_pos, seed_val)
+                print(f"[main] Role split (history -> train, target -> test): "
+                      f"Train={len(train_data)}, Test={len(test_data)}")
+            else:
+                train_data, test_data = split_recs_dataset_temporal(
+                    full_data=full_recs_data,
+                    fold=current_fold,
+                    num_folds=num_folds_val,
+                    floatseed=seed_val,
+                    max_test_pos_per_user=max_pos,
+                    window_size=window_size_val
+                )
             print(f"[main] Split complete. Train={len(train_data)}, Test={len(test_data)}")
+
+            if "preprocess" not in no_save:
+                save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data, test_data)
 
         for i, model_entry in enumerate(raw_models):
             tf.compat.v1.reset_default_graph()
@@ -1658,6 +1738,9 @@ def main(args):
             md_cfg = json.loads(md_cfg_path.read_text(encoding="utf-8"))
             real_model_config = md_cfg.get("model", md_cfg)
             real_model_config = _inject_search_hybrid_task(real_model_config, exp_config, task_type)
+            if role_split:
+                real_model_config = copy.deepcopy(real_model_config)
+                real_model_config.setdefault("parameters", {})["seed"] = run_seed
             full_config = {**ds_cfg, **md_cfg, "experiment": exp_config}
 
             base_run_dir = prepare_run_dir(exp_config, ds_cfg, md_cfg, dataset_key, current_model_name)

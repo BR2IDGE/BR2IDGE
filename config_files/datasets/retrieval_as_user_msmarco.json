@@ -6,20 +6,21 @@
     "benchmark": "trec-dl-2019",
     "candidate_limit": 1000,
     "qrels_min_relevance": 2,
-
+    "target_mode": "new",
     "top_k": 1000,
     "seed": 42,
-
     "flush_every": 250000,
     "progress_every": 10,
-
     "bm25_config": {
       "index_name": "bm25_index_msmarco_rau",
       "model": "bm25",
       "query_col": "search_query",
       "doc_col": "document",
       "doc_id_col": "document_id",
-      "hyperparams": { "b": 0.75, "k1": 1.5 }
+      "hyperparams": {
+        "b": 0.75,
+        "k1": 1.5
+      }
     }
   }
 }
