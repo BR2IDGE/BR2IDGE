@@ -50,6 +50,8 @@ class BiEncoderModel(BaseRecsModel):
         self.task: str = params.get("task", "normal")
         print(f"[BiEncoderModel] Task initialized: '{self.task}'")
 
+        self.skip_training: bool = bool(params.get("skip_training", False))
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model: Optional[SentenceTransformer] = None
 
@@ -91,6 +93,10 @@ class BiEncoderModel(BaseRecsModel):
     def fit(self):
         if self._train_df is None or self.model is None:
             raise RuntimeError("preprocess() must be called before fit().")
+
+        if self.skip_training:
+            print("[BiEncoderModel] skip_training=True — using pretrained weights without fine-tuning.")
+            return
 
         print("[BiEncoderModel] Starting training...")
         train_hf = self._convert_to_hf_dataset(self._train_df)

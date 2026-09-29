@@ -1,13 +1,26 @@
 {
-  "experiment_name": "Search_experiment",
+  "experiment_name": "MSMARCO_TREC_DL19_Lite",
   "task_type": "search",
   "output_dir": "artifacts",
-  "dataset": { 
-    "name": "Movielens"
+  "dataset": {
+    "name": "msmarco_trec_dl",
+    "config_path": "config_files/datasets/msmarco_trec_dl.json"
   },
   "model": [
-    { 
-      "name": "BM25Model"
+    {
+      "name": "BM25Model",
+      "config_path": "config_files/models/bm25_search.json"
+    },
+    {
+      "name": "ColBERTModel",
+      "config_path": "config_files/models/colbert_msmarco.json"
+    },
+    {
+      "name": "DenseRetrieverModel"
+    },
+    {
+      "name": "BiEncoderSearchModel",
+      "config_path": "config_files/models/bi_encoder_msmarco.json"
     },
     {
       "name": "SpladeKnnModel"
