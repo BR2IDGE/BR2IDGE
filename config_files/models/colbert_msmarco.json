@@ -1,0 +1,17 @@
+{
+  "model": {
+    "model_name": "ColBERTModel",
+    "name": "ColBERTModel",
+    "parameters": {
+      "backbone": "colbert-ir/colbertv2.0",
+      "dim": 128,
+      "query_maxlen": 32,
+      "doc_maxlen": 180,
+      "batch_size": 32,
+      "filter_punctuation": true,
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id"
+    }
+  }
+}

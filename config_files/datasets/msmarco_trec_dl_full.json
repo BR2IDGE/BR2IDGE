@@ -1,0 +1,22 @@
+{
+  "dataloader": {
+    "dataset_name": "msmarco_trec_dl",
+    "path": "./data/msmarco_trec_dl",
+    "benchmark": "trec-dl-2019",
+    "corpus_mode": "full",
+    "qrels_min_relevance": 2,
+    "test_size": 0.2,
+    "val_size": 0.1,
+    "seed": 42,
+    "head_train": null,
+    "head_val": null,
+    "head_test": null,
+    "cache_processed": true
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

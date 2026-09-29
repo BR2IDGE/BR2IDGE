@@ -1,3 +1,4 @@
+import json
 from typing import Optional, Tuple, List, Dict, Set, Iterable, Any
 import pandas as pd
 from retriv import DenseRetriever
@@ -28,6 +29,7 @@ class DenseRetrieverModel(BaseRecsModel):
         self.qcol: str = params.get("query_col", "search_query")
         self.dcol: str = params.get("doc_col", "document")
         self.ccol: str = params.get("cat_col", "category")
+        self.did_col: str = params.get("doc_id_col", "document_id")
 
         self.retriever_params: Dict = params.get("retriever_params", {
             "normalize": True,
@@ -40,6 +42,8 @@ class DenseRetrieverModel(BaseRecsModel):
             "batch_size": 512,
             "show_progress": True,
         })
+        
+        self.candidate_search_cutoff: int = int(params.get("candidate_search_cutoff", 1000))
 
         self._collection: Optional[List[Dict]] = None
         self._dr: Optional[DenseRetriever] = None
@@ -61,6 +65,22 @@ class DenseRetrieverModel(BaseRecsModel):
         self._doc_to_id = pd.Series(collection_df.id.values, index=collection_df.text).to_dict()
         
         return collection_df[["id", "text"]].to_dict("records")
+    
+    def _build_candidate_collection(self, df: pd.DataFrame) -> List[Dict]:
+        unique_docs = df[[self.did_col, self.dcol]].drop_duplicates(subset=[self.did_col])
+        collection_df = unique_docs.rename(columns={self.dcol: "text", self.did_col: "id"})
+        collection_df["id"] = collection_df["id"].astype(str)
+        return collection_df[["id", "text"]].to_dict("records")
+
+    def _parse_json_list(self, v: Any) -> List[str]:
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        if not v:
+            return []
+        try:
+            return [str(x) for x in json.loads(v)]
+        except Exception:
+            return []
 
     def preprocess(self, train_data: pd.DataFrame, **kwargs):
         """
@@ -73,6 +93,20 @@ class DenseRetrieverModel(BaseRecsModel):
         self._train_df = train_data
         self._test_df = kwargs.get("test_data")
         self._val_df = kwargs.get("val_data")
+        
+        self._candidate_mode = (
+            isinstance(self._test_df, pd.DataFrame) and "candidate_ids" in self._test_df.columns
+        )
+
+        if self._candidate_mode:
+            print("[DenseRetrieverModel] Candidate mode detected (candidate_ids present in test_data).")
+            self._collection = self._build_candidate_collection(train_data)
+            self.corpus_size = len(self._collection)
+            print(
+                f"[DenseRetrieverModel] Preprocess complete — candidate corpus with "
+                f"{self.corpus_size} unique docs."
+            )
+            return
         
         doc_sources = [train_data[[self.dcol]]]
         
@@ -114,6 +148,43 @@ class DenseRetrieverModel(BaseRecsModel):
         )
         self._dr.index(self._collection, **self.index_params)
         print(f"[DenseRetrieverModel] Fit complete — Collection indexed ({self.corpus_size} docs).")
+        
+    def _prediction_candidate_mode(self, test_data: pd.DataFrame) -> Tuple[List[List[float]], List[List[float]]]:
+        if "ground_truth_ids" not in test_data.columns:
+            raise ValueError("Candidate mode requires a 'ground_truth_ids' column in test_data.")
+
+        queries = test_data[self.qcol].astype(str).tolist()
+        cand_lists = [self._parse_json_list(v) for v in test_data["candidate_ids"].tolist()]
+        gt_sets = [set(self._parse_json_list(v)) for v in test_data["ground_truth_ids"].tolist()]
+
+        queries_for_search = [{"id": str(i), "text": q} for i, q in enumerate(queries)]
+
+        print(
+            f"[DenseRetrieverModel] Candidate-mode search: {len(queries)} queries against the "
+            f"global index (corpus={self.corpus_size} docs, cutoff={self.candidate_search_cutoff})..."
+        )
+        batch_results = (
+            self._dr.bsearch(queries_for_search, cutoff=self.candidate_search_cutoff)
+            if queries_for_search
+            else {}
+        )
+
+        all_y_true: List[List[float]] = []
+        all_y_pred: List[List[float]] = []
+
+        for i in range(len(queries)):
+            hits = batch_results.get(str(i), {})
+            hits_map = {str(k): float(v) for k, v in hits.items()} if isinstance(hits, dict) else {}
+
+            cands = cand_lists[i]
+            y_pred = [float(hits_map.get(str(cid), 0.0)) for cid in cands]
+            y_true = [1.0 if str(cid) in gt_sets[i] else 0.0 for cid in cands]
+
+            all_y_pred.append(y_pred)
+            all_y_true.append(y_true)
+
+        print(f"[DenseRetrieverModel] Candidate-mode prediction complete — {len(all_y_true)} predictions generated.")
+        return all_y_true, all_y_pred
 
     def prediction(self, test_data: pd.DataFrame) -> Tuple[List[List[int]], List[List[float]]]:
         """
@@ -125,6 +196,9 @@ class DenseRetrieverModel(BaseRecsModel):
 
         if not isinstance(test_data, pd.DataFrame):
             raise ValueError(f"test_data must be a DataFrame with columns [{self.qcol}, {self.dcol}].")
+
+        if self._candidate_mode:
+            return self._prediction_candidate_mode(test_data)
 
         all_docs_ids = [doc['id'] for doc in self._collection]
         

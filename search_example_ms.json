@@ -1,0 +1,38 @@
+{
+  "experiment_name": "MSMARCO_TREC_DL19_Lite",
+  "task_type": "search",
+  "output_dir": "artifacts",
+  "dataset": {
+    "name": "msmarco_trec_dl",
+    "config_path": "config_files/datasets/msmarco_trec_dl.json"
+  },
+  "model": [
+    {
+      "name": "BM25Model"
+    },
+    {
+      "name": "ColBERTModel",
+      "config_path": "config_files/models/colbert_msmarco.json"
+    },
+    {
+      "name": "DenseRetrieverModel"
+    },
+    {
+      "name": "BiEncoderSearchModel",
+      "config_path": "config_files/models/bi_encoder_msmarco.json"
+    },
+    {
+      "name": "SpladeKnnModel"
+    }
+  ],
+  "execution": {
+    "force": ["preprocess", "features", "eval", "index", "train"],
+    "skip": [],
+    "no_save": [],
+    "n_runs": 1
+  },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "PRECISION"]
+  }
+}

@@ -1018,6 +1018,7 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
         dl = full_config.get("dataloader", full_config) or {}
         super().__init__(dl)
 
+        self._raw_dl = dl
         self.cfg = self._parse_cfg(dl)
         mode = str(self.cfg.mode).lower().strip()
         if mode == "movielens_genome":
@@ -1109,10 +1110,12 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             return self._build_amazon_category_query_as_user()
         if mode in {"beir", "beir_query"}:
             return self._build_beir_query_as_user()
+        if mode == "msmarco_query":
+            return self._build_msmarco_retrieval_as_user()
 
         raise ValueError(
-            f"Unknown mode='{self.cfg.mode}'. Use 'movielens_genome', 'profile_query', "
-            f"'tag_query', 'amazon_category', or 'beir'."
+            f"Unknown mode='{self.cfg.mode}'. Use 'movielens_genome', 'profile_query', 'tag_query', "
+            "'amazon_category', 'beir', or 'msmarco_query'."
         )
 
     def _build_movielens_query_as_user(self) -> pd.DataFrame:
@@ -1184,6 +1187,93 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             chunks.append(pd.DataFrame(rows))
 
         df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+        if df.empty:
+            return df
+
+        stats = df.groupby("user")["score"].agg(["min", "max"]).reset_index().rename(columns={"min": "_min", "max": "_max"})
+        df = df.merge(stats, on="user", how="left")
+        df["score"] = (df["score"] - df["_min"]) / (df["_max"] - df["_min"] + 1e-9)
+        df = df.drop(columns=["_min", "_max"])
+
+        if str(self.cfg.label_mode).lower() == "dense":
+            df["label"] = df["score"].astype(float)
+        else:
+            df["label"] = 1.0
+
+        return df[["user", "item", "label", "time", "score"]].copy()
+    
+    def _build_msmarco_retrieval_as_user(self) -> pd.DataFrame:
+        from search_recs.search.dataloader.msmarco_trec_dl import MsMarcoTrecDlLoader
+        from search_recs.search.dataloader.base_dataloader import BuildConfig
+
+        raw = self._raw_dl
+        ingest = MsMarcoTrecDlLoader(
+            BuildConfig(test_size=0.2, val_size=0.1, random_state=int(self.cfg.seed), head_train=None, head_test=None),
+            benchmark=raw.get("benchmark", "trec-dl-2019"),
+            path=raw.get("path", "./data/msmarco_trec_dl"),
+            candidate_limit=raw.get("candidate_limit", 1000),
+            qrels_min_relevance=raw.get("qrels_min_relevance", 2),
+            cache_processed=True,
+        )
+
+        paths = ingest._ensure_files()
+        queries_map = ingest._read_queries(paths["queries"])
+        qrels = ingest._read_qrels(paths["qrels"])
+        judged_qids = [q for q in qrels["query_id"].drop_duplicates().tolist() if q in queries_map]
+        judged_qids = ingest._limit_queries(judged_qids)
+
+        candidates = ingest._read_candidates(paths["top1000"], judged_qids)
+        if candidates.empty:
+            raise ValueError("[RetrievalAsUser][MSMARCO] No candidates found.")
+
+        bm25_cfg = dict(self.cfg.bm25_config or {})
+        query_col = bm25_cfg.get("query_col", "search_query")
+        doc_col = bm25_cfg.get("doc_col", "document")
+        doc_id_col = bm25_cfg.get("doc_id_col", "document_id")
+
+        unique_docs = (
+            candidates[["document_id", "document"]]
+            .drop_duplicates(subset=["document_id"])
+            .rename(columns={"document_id": doc_id_col, "document": doc_col})
+        )
+        print(f"[RetrievalAsUser][MSMARCO] Unique docs for indexing: {len(unique_docs)}")
+
+        _ensure_nltk()
+        bm25_index_cfg = _bm25_cfg_for_indexing(bm25_cfg)
+        bm25 = _make_bm25_model(bm25_index_cfg, dataset_path=self.dataset_path)
+        bm25.preprocess(train_data=unique_docs)
+        bm25.fit()
+
+        queries = [(qid, queries_map[qid]) for qid in judged_qids]
+        if self.cfg.query_limit is not None:
+            ql = int(self.cfg.query_limit)
+            if ql > 0 and len(queries) > ql:
+                rng = np.random.default_rng(self.cfg.seed)
+                idx = rng.permutation(len(queries))[:ql]
+                queries = [queries[i] for i in idx]
+
+        print(f"[RetrievalAsUser][MSMARCO] Queries to search: {len(queries)}")
+
+        rows: List[Dict[str, Any]] = []
+        for q_idx, (qid, qtext) in enumerate(queries):
+            top_pairs = _bm25_search_topk(bm25, qtext, top_k=int(self.cfg.top_k))
+            if not top_pairs:
+                continue
+
+            u = f"retrieval::{qid}"
+            for rank, (doc_id, score) in enumerate(top_pairs):
+                try:
+                    s = float(score)
+                except Exception:
+                    continue
+                if s <= 0:
+                    continue
+                rows.append({"user": u, "item": str(doc_id), "time": int(rank), "score": s})
+
+            if int(self.cfg.progress_every) > 0 and (q_idx + 1) % int(self.cfg.progress_every) == 0:
+                print(f"[RetrievalAsUser][MSMARCO] {q_idx+1}/{len(queries)} | rows={len(rows)}")
+
+        df = pd.DataFrame(rows)
         if df.empty:
             return df
 

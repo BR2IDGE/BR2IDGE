@@ -5,6 +5,7 @@ from search_recs.recs.dataloader.generic import GenericRecsDataLoader
 from search_recs.recs.dataloader.amazonEletronics import AmazonElectronicsDataLoader
 from search_recs.recs.dataloader.retrieval_as_user import RetrievalAsUserDataLoader
 from search_recs.recs.dataloader.beir import BeirQueryAsUserDataLoader
+from search_recs.recs.dataloader.msmarco_trec_dl import MsMarcoTrecDlRecsDataLoader
 
 __all__ = [
     "RecsDataLoader",
@@ -14,6 +15,7 @@ __all__ = [
     "AmazonElectronicsDataLoader",
     "RetrievalAsUserDataLoader",
     "BeirQueryAsUserDataLoader",
+    "MsMarcoTrecDlRecsDataLoader",
 ]
 
 REGISTRY = {
@@ -22,6 +24,7 @@ REGISTRY = {
     "generic": GenericRecsDataLoader,
     "amazonElectronics": AmazonElectronicsDataLoader,
     "retrieval_as_user": RetrievalAsUserDataLoader,
+    "msmarco_trec_dl": MsMarcoTrecDlRecsDataLoader,
 }
 
 from search_recs.datasets.manager import BEIR_SUBSETS  

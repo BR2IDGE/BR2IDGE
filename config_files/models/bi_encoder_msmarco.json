@@ -1,0 +1,16 @@
+{
+  "model": {
+    "model_name": "BiEncoderSearchModel",
+    "name": "BiEncoderSearchModel",
+    "parameters": {
+      "pretrained_name": "all-MiniLM-L6-v2",
+      "skip_training": true,
+      "token_max_length": 128,
+      "annoy_n_trees": 10,
+      "model_dir": "./output/bi_encoder_msmarco",
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id"
+    }
+  }
+}
