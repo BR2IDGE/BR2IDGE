@@ -1,0 +1,11 @@
+{
+  "dataloader": {
+    "dataset_name": "msmarco_trec_dl",
+    "path": "./data/msmarco_trec_dl",
+    "benchmark": "trec-dl-2019",
+    "candidate_limit": 1000,
+    "qrels_min_relevance": 2,
+    "seed": 42,
+    "head_test": null
+  }
+}
