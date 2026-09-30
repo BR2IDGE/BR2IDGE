@@ -18,7 +18,7 @@ SELECTED=("$@")
 "$PY" analysis/generate_runs.py "${SELECTED[@]}" || exit 1
 mkdir -p logs/item2
 
-declare -a FAILED
+FAILED=()
 for g in "${SELECTED[@]}"; do
     for cfg in runs/"$g"/*.json; do
         name=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['experiment_name'])" "$cfg")

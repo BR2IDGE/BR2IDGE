@@ -37,7 +37,7 @@ GROUP_PARAM = {"m1": "query_limit", "m2": "overlap_break", "m3": "cold_test_frac
 
 # ----------------------------------------------------------------------------- loading
 def load_metrics(experiments: pd.DataFrame, run_ids: pd.DataFrame) -> pd.DataFrame:
-    frames = []
+    frames, broken = [], []
     for exp in experiments.itertuples(index=False):
         wanted = set(run_ids.loc[run_ids["experiment"] == exp.experiment, "run_id"])
         for hash_dir in exp.hash_dirs:
@@ -45,11 +45,18 @@ def load_metrics(experiments: pd.DataFrame, run_ids: pd.DataFrame) -> pd.DataFra
                 run_id = path.parent.name
                 if run_id not in wanted:
                     continue
+                if path.stat().st_size == 0:
+                    broken.append((exp.experiment, run_id))
+                    continue
                 d = pd.read_csv(path)
                 d["col"] = d["metric"].str.upper() + "@" + d["K"].astype(str)
                 wide = d.pivot_table(index="user", columns="col", values="value", aggfunc="first").reset_index()
                 extra = d.drop_duplicates("user")[["user", "n_pos", "n_pos_unscored"]]
                 frames.append(wide.merge(extra, on="user").assign(experiment=exp.experiment, run_id=run_id))
+    if broken:
+        print(f"[analysis] WARNING: {len(broken)} empty per_user_metrics.csv skipped (incomplete copy?):")
+        for name, n in pd.DataFrame(broken, columns=["exp", "run"]).groupby("exp").size().items():
+            print(f"             {name}: {n} run(s)")
     if not frames:
         raise SystemExit("No per_user_metrics.csv matching the saved matrices was found.")
     out = pd.concat(frames, ignore_index=True)
@@ -249,7 +256,7 @@ def main():
 
     experiments = pd.DataFrame(json.loads((out / "experiments.json").read_text(encoding="utf-8")))
     structure = pd.read_csv(out / "structure.csv")
-    features = pd.read_csv(out / "user_features.csv", dtype={"user": str, "run_id": str})
+    features = pd.read_csv(out / "user_features.csv", dtype={"user": str, "run_id": str}, low_memory=False)
     metrics = load_metrics(experiments, structure[["experiment", "run_id"]])
 
     users = features.merge(metrics, on=["experiment", "run_id", "user"], how="inner")
