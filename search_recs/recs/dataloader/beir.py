@@ -1,6 +1,7 @@
 import copy
 from typing import Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
 from search_recs.datasets.beir_files import (
@@ -36,6 +37,11 @@ class BeirQueryAsUserDataLoader(RecsDataLoader):
         self.order_by = str(dl.get("order_by", "score")).strip().lower()
         if self.order_by not in {"score", "random"}:
             raise ValueError(f"[BEIR-QueryAsUser] order_by must be 'score' or 'random', got '{self.order_by}'.")
+        # Controlled removal of co-occurrence: each document judged for more than one query is,
+        # with this probability, kept in a single (random) query only. 1.0 -> block-diagonal matrix.
+        self.overlap_break = float(dl.get("overlap_break", 0.0) or 0.0)
+        if not 0.0 <= self.overlap_break <= 1.0:
+            raise ValueError(f"[BEIR-QueryAsUser] overlap_break must be in [0, 1], got {self.overlap_break}.")
 
         self.dataset_path = subset_path(self.subset)
 
@@ -85,6 +91,9 @@ class BeirQueryAsUserDataLoader(RecsDataLoader):
             df = df[df["query_id"].isin(set(keep))]
             print(f"[BEIR-QueryAsUser] query_limit={limit}: kept {df['query_id'].nunique()} query-users.")
 
+        if self.overlap_break > 0:
+            df = self._break_overlap(df)
+
         out = pd.DataFrame(
             {
                 "user": USER_PREFIX + df["query_id"].astype(str),
@@ -113,6 +122,33 @@ class BeirQueryAsUserDataLoader(RecsDataLoader):
             f"items/user: min={per_user.min()} mean={per_user.mean():.1f} max={per_user.max()}"
         )
         return out
+
+    def _break_overlap(self, df: pd.DataFrame) -> pd.DataFrame:
+        rng = np.random.default_rng(self.seed)
+        n_queries = df.groupby("document_id")["query_id"].transform("nunique")
+        shared_docs = df.loc[n_queries > 1, "document_id"].unique()
+        broken = set(shared_docs[rng.random(len(shared_docs)) < self.overlap_break])
+
+        # Keeper = one random judgement per broken document; every other judgement of it is dropped.
+        shuffled = df.sample(frac=1.0, random_state=self.seed)
+        keepers = set(shuffled[shuffled["document_id"].isin(broken)].drop_duplicates("document_id").index)
+        drop = df["document_id"].isin(broken) & ~df.index.isin(keepers)
+        before_users = df["query_id"].nunique()
+        df = df[~drop]
+
+        if self.min_user_interactions > 1:
+            counts = df.groupby("query_id")["document_id"].transform("size")
+            df = df[counts >= self.min_user_interactions]
+
+        still_shared = int((df.groupby("document_id")["query_id"].nunique() > 1).sum())
+        print(
+            f"[BEIR-QueryAsUser] overlap_break={self.overlap_break}: {len(broken)}/{len(shared_docs)} shared docs "
+            f"made exclusive | judgements dropped={int(drop.sum())} | docs still shared={still_shared} | "
+            f"query-users {before_users} -> {df['query_id'].nunique()} (min_user_interactions re-applied)"
+        )
+        if df.empty:
+            raise ValueError("[BEIR-QueryAsUser] overlap_break removed every query-user.")
+        return df
 
     def hybrid_load_data(self) -> pd.DataFrame:
         print("[BEIR-QueryAsUser] Hybrid strategy 'query-as-user': queries become users.")

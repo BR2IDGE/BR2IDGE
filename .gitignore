@@ -63,3 +63,8 @@ Miniconda3-latest-Linux-x86_64.sh.1
 
 *.inter
 .run_configs/
+
+# Item 2 (transfer conditions): generated experiment configs and analysis outputs
+runs/
+config_files/datasets/generated/
+analysis/out/

@@ -1536,7 +1536,32 @@ def split_recs_by_role(full_data: pd.DataFrame, max_test_pos_per_user: int | Non
     return train_df, test_df
 
 
-def save_split_matrices(out_dir: Path, run_idx: int, fold: int, run_id: str, train_df: pd.DataFrame, test_df: pd.DataFrame):
+def make_test_items_cold(train_df: pd.DataFrame, test_df: pd.DataFrame, frac: float, seed: int):
+    """Controlled cold-start: remove from train every interaction with a random fraction of the
+    (warm) test items, so the model has no signal for them. Used to measure how transfer
+    degrades as the relevant items lose co-occurrence support."""
+    if not 0.0 < frac <= 1.0:
+        raise ValueError(f"[cold-test] cold_test_frac must be in (0, 1], got {frac}.")
+    train_items = set(train_df["item"].astype(str))
+    test_items = pd.Series(test_df["item"].astype(str).unique())
+    warm = test_items[test_items.isin(train_items)].sort_values().to_numpy()
+    rng = np.random.default_rng(seed)
+    n_cold = int(round(frac * len(warm)))
+    chosen = set(rng.choice(warm, size=n_cold, replace=False)) if n_cold else set()
+
+    keep = ~train_df["item"].astype(str).isin(chosen)
+    new_train = train_df[keep].reset_index(drop=True)
+    cold_pos = (~test_df["item"].astype(str).isin(set(new_train["item"].astype(str)))).mean()
+    lost_users = train_df["user"].nunique() - new_train["user"].nunique()
+    info = {"cold_test_frac": frac, "warm_test_items": int(len(warm)), "items_made_cold": int(n_cold),
+            "train_rows_removed": int((~keep).sum()), "users_without_history": int(lost_users),
+            "test_pos_cold_after": float(cold_pos)}
+    print(f"[cold-test] {info}")
+    return new_train, info
+
+
+def save_split_matrices(out_dir: Path, run_idx: int, fold: int, run_id: str, train_df: pd.DataFrame,
+                        test_df: pd.DataFrame, extra: dict | None = None):
     """Persist the adapted user-item matrices of a run for offline structural analysis."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"run{run_idx:02d}_fold{fold:02d}"
@@ -1551,7 +1576,7 @@ def save_split_matrices(out_dir: Path, run_idx: int, fold: int, run_id: str, tra
             out[[c for c in ("user", "item", "label", "time") if c in out.columns]].to_parquet(
                 out_dir / f"{stem}_{name}.parquet", index=False)
     save_json(out_dir / f"{stem}_meta.json", {"run_id": run_id, "run_idx": run_idx, "fold": fold,
-                                              "n_train": len(train_df), "n_test": len(test_df)})
+                                              "n_train": len(train_df), "n_test": len(test_df), **(extra or {})})
     print(f"[main] Split matrices saved to {out_dir}/{stem}_{{train,test}}.parquet")
 
 
@@ -1724,8 +1749,14 @@ def main(args):
                 )
             print(f"[main] Split complete. Train={len(train_data)}, Test={len(test_data)}")
 
+            split_info = {}
+            cold_frac = float(dl_params.get("cold_test_frac", 0.0) or 0.0)
+            if cold_frac > 0:
+                train_data, split_info = make_test_items_cold(train_data, test_data, cold_frac, seed_val + current_fold)
+
             if "preprocess" not in no_save:
-                save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data, test_data)
+                save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data, test_data,
+                                    extra=split_info)
 
         for i, model_entry in enumerate(raw_models):
             tf.compat.v1.reset_default_graph()
