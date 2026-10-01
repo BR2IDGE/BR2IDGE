@@ -1691,6 +1691,19 @@ def main(args):
         train_data = None
         test_data = None
 
+    # Rows tagged role='context' (e.g. real users of the hybrid dataset) are training-only signal:
+    # they never enter the split and are appended to train in every run.
+    context_data = None
+    if task_type == "recs" and full_recs_data is not None and "role" in full_recs_data.columns:
+        is_context = full_recs_data["role"].eq("context")
+        if is_context.any():
+            context_data = full_recs_data[is_context].drop(columns="role").reset_index(drop=True)
+            full_recs_data = full_recs_data[~is_context].reset_index(drop=True)
+            print(f"[main] {context_data['user'].nunique()} context user(s) / {len(context_data)} interaction(s) "
+                  f"are kept in train in every run and never evaluated.")
+        if full_recs_data["role"].isna().all():
+            full_recs_data = full_recs_data.drop(columns="role")
+
     role_split = task_type == "recs" and full_recs_data is not None and "role" in full_recs_data.columns
     if role_split:
         print("[main] Dataloader provided explicit history/target roles: the split is fixed, so "
@@ -1750,9 +1763,16 @@ def main(args):
             print(f"[main] Split complete. Train={len(train_data)}, Test={len(test_data)}")
 
             split_info = {}
+            if context_data is not None:
+                ctx = context_data.rename(columns={"time": "timestamp"}) if "timestamp" in train_data.columns else context_data
+                train_data = pd.concat([train_data, ctx], ignore_index=True)
+                split_info.update({"context_users": int(context_data["user"].nunique()),
+                                   "context_interactions": int(len(context_data))})
+
             cold_frac = float(dl_params.get("cold_test_frac", 0.0) or 0.0)
             if cold_frac > 0:
-                train_data, split_info = make_test_items_cold(train_data, test_data, cold_frac, seed_val + current_fold)
+                train_data, cold_info = make_test_items_cold(train_data, test_data, cold_frac, seed_val + current_fold)
+                split_info.update(cold_info)
 
             if "preprocess" not in no_save:
                 save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data, test_data,

@@ -1,0 +1,26 @@
+{
+  "experiment_name": "Hybrid_search",
+  "task_type": "search",
+  "output_dir": "artifacts",
+  "dataset": {"name": "hybrid"},
+  "model": [
+    {
+      "name": "BM25Model",
+      "config_path": "config_files/models/hybrid_bm25_search.json"
+    },
+    {
+      "name": "BiEncoderSearchModel",
+      "config_path": "config_files/models/hybrid_biencoder_search.json"
+    }
+  ],
+  "execution": {
+    "force": ["preprocess", "features", "eval", "index", "train"],
+    "skip": [],
+    "no_save": [],
+    "n_runs": 1
+  },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "PRECISION"]
+  }
+}

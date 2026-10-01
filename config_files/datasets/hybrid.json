@@ -1,0 +1,12 @@
+{
+  "dataloader": {
+    "dataset_name": "hybrid",
+    "path": "data/hybrid_dataset/hybrid_dataset",
+    "fold": "fold_2"
+  },
+  "features": {
+    "user_col": "user",
+    "item_col": "item",
+    "label_col": "label"
+  }
+}

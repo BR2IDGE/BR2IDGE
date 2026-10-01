@@ -1,0 +1,19 @@
+{
+  "model": {
+    "model_name": "BiEncoderSearchModel",
+    "name": "BiEncoderSearchModel",
+    "parameters": {
+      "task": "normal",
+      "pretrained_name": "all-MiniLM-L6-v2",
+      "query_col": "search_query",
+      "doc_col": "document",
+      "doc_id_col": "document_id",
+      "token_max_length": 128,
+      "batch_size": 96,
+      "learning_rate": 1e-7,
+      "epochs": 3,
+      "annoy_n_trees": 10,
+      "model_dir": "./output/hybrid_bi_encoder"
+    }
+  }
+}

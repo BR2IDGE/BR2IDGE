@@ -1,0 +1,44 @@
+{
+  "experiment_name": "HYBRID_LightFM_QueryAsUser",
+  "task_type": "recs",
+  "hybrid": true,
+  "hybridStrategie": "query-as-user",
+  "output_dir": "artifacts",
+  "dataset": {
+    "name": "hybrid",
+    "config_path": "config_files/datasets/hybrid_query_as_user.json"
+  },
+  "model": [
+    {
+      "name": "LightFMModel"
+    }
+  ],
+  "execution": {
+    "skip": [],
+    "force": [
+      "preprocess",
+      "features",
+      "train",
+      "index",
+      "eval"
+    ],
+    "no_save": [],
+    "n_runs": 6,
+    "window_size": 0.05
+  },
+  "evaluation": {
+    "n_pos_samples": 20,
+    "n_neg_samples": 200,
+    "top_ks": [
+      5,
+      10,
+      20,
+      50
+    ],
+    "metrics": [
+      "NDCG",
+      "PRECISION",
+      "RECALL"
+    ]
+  }
+}

@@ -2,6 +2,8 @@ __all__ = [
     "BaseRecsModel",
     "DeepFMModel",
     "LightFMModel",
+    "LightFMTextModel",
+    "LightFMContentModel",
     "LightGCNModel",
     "Bert4REC",
     "ALSModel",
@@ -16,6 +18,12 @@ def __getattr__(name):
     if name == "LightFMModel":
         from .light_fm import LightFMModel
         return LightFMModel
+    if name == "LightFMTextModel":
+        from .light_fm import LightFMTextModel
+        return LightFMTextModel
+    if name == "LightFMContentModel":
+        from .light_fm import LightFMContentModel
+        return LightFMContentModel
     if name == "DeepFMModel":
         from .libreco_model import DeepFMModel
         return DeepFMModel

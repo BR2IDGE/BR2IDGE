@@ -21,7 +21,8 @@ import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
 
 STRATEGY_SHORT = {"query-as-user": "QaU", "retrieval-as-user": "RaU"}
-DATASET_SHORT = {"beir_nfcorpus": "beir", "msmarco_trec_dl": "msmarco"}
+DATASET_SHORT = {"beir_nfcorpus": "beir", "msmarco_trec_dl": "msmarco", "hybrid": "hybrid"}
+CONTEXT_PREFIX = "user::"  # real users injected as training-only context (hybrid dataset, group ctx)
 
 
 def discover(artifacts: Path) -> pd.DataFrame:
@@ -75,6 +76,8 @@ def analyse_run(train: pd.DataFrame, test: pd.DataFrame):
 
     user_deg = np.asarray(X.sum(axis=1)).ravel()
     item_deg = np.asarray(X.sum(axis=0)).ravel()
+    # per-user statistics describe the pseudo-users (queries); injected real users only add edges
+    pseudo = ~pd.Index(users.astype(str)).str.startswith(CONTEXT_PREFIX)
 
     UU = (X @ X.T).tocsr()
     UU.setdiag(0)
@@ -99,15 +102,17 @@ def analyse_run(train: pd.DataFrame, test: pd.DataFrame):
 
     structure = {
         "users": n_users,
+        "pseudo_users": int(pseudo.sum()),
+        "context_users": int((~pseudo).sum()),
         "items": n_items,
         "interactions": int(X.nnz),
         "density": X.nnz / max(n_users * n_items, 1),
-        "user_deg_mean": user_deg.mean(),
-        "user_deg_median": float(np.median(user_deg)),
+        "user_deg_mean": user_deg[pseudo].mean(),
+        "user_deg_median": float(np.median(user_deg[pseudo])),
         "item_deg_mean": item_deg.mean(),
         "items_deg1_frac": (item_deg == 1).mean(),
-        "users_no_neighbor_frac": (neighbours == 0).mean(),
-        "neighbors_per_user": neighbours.mean(),
+        "users_no_neighbor_frac": (neighbours[pseudo] == 0).mean(),
+        "neighbors_per_user": neighbours[pseudo].mean(),
         "items_no_cooc_frac": (cooc_items == 0).mean(),
         "cooc_per_item": cooc_items.mean(),
         "components": int(n_comp),
@@ -148,7 +153,7 @@ def main():
         raise SystemExit(f"No hybrid recs experiment with saved matrices found under {artifacts}/.")
     experiments.to_json(out / "experiments.json", orient="records", indent=2)
 
-    id_cols = ["experiment", "dataset", "strategy", "group", "param", "level", "seed", "target_mode", "top_k"]
+    id_cols = ["experiment", "model", "dataset", "strategy", "group", "param", "level", "seed", "target_mode", "top_k"]
     structure_rows, user_frames = [], []
     for exp in experiments.itertuples(index=False):
         metas = sorted(Path(exp.matrices).glob("*_meta.json"))
@@ -171,8 +176,8 @@ def main():
     structure.to_csv(out / "structure.csv", index=False)
     users.to_csv(out / "user_features.csv", index=False)
 
-    summary_cols = ["users", "items", "density", "users_no_neighbor_frac", "neighbors_per_user",
-                    "components", "lcc_frac", "test_pos_cold_frac"]
+    summary_cols = ["pseudo_users", "context_users", "items", "density", "users_no_neighbor_frac",
+                    "neighbors_per_user", "components", "lcc_frac", "test_pos_cold_frac"]
     base = structure[structure["group"] == "base"]
     if not base.empty:
         pd.set_option("display.width", 200)

@@ -1,0 +1,17 @@
+{
+  "model": {
+    "model_type": "LightFMTextModel",
+    "model_name": "lightfm_text_bpr",
+    "parameters": {
+      "loss": "bpr",
+      "learning_rate": 0.05,
+      "epochs": 20,
+      "seed": 42,
+      "embedding_dim": 16,
+      "max_text_features": 5000,
+      "min_df": 2,
+      "identity_features": true,
+      "content_weight": 1.0
+    }
+  }
+}

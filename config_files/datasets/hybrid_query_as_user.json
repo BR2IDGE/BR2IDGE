@@ -1,0 +1,14 @@
+{
+  "dataloader": {
+    "dataset_name": "HybridDataset",
+    "path": "data/hybrid_dataset/hybrid_dataset",
+    "min_grade": null,
+    "min_user_interactions": 2,
+    "query_limit": null,
+    "seed": 42,
+    "order_by": "random",
+    "num_folds": 3,
+    "context_users_frac": 0.0,
+    "context_min_rating": null
+  }
+}

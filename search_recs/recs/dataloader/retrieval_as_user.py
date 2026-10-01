@@ -1016,6 +1016,11 @@ class RetrievalAsUserConfig:
     # "new": test = qrels NOT in the retrieved history (relevant docs the recommender must add).
     # "all": test = every qrel of the query (re-ranking setting, comparable to native search).
     target_mode: str = "retrieval_tail"
+    # hybrid mode: relevance threshold (None = the dataset's `relevant` flag) and training-only
+    # co-occurrence from real users of the same catalogue (see search_recs.recs.dataloader.hybrid)
+    min_grade: Optional[float] = None
+    context_users_frac: float = 0.0
+    context_min_rating: Optional[float] = None
 
 
 TARGET_MODES = {"retrieval_tail", "new", "all"}
@@ -1061,6 +1066,9 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             self.dataset_path = ensure_dataset("lastfm-dataset-360K")
         elif mode in {"beir", "beir_query"}:
             self.dataset_path = beir_files.subset_path(self.cfg.subset)
+        elif mode == "hybrid":
+            from search_recs.recs.dataloader.hybrid import _dataset_path as _hybrid_path
+            self.dataset_path = _hybrid_path(self.cfg.path)
         else:
             self.dataset_path = _resolve_dataset_path(self.cfg.path)
 
@@ -1130,6 +1138,9 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             qrels_splits=list(dl.get("qrels_splits") or ["test"]),
             min_score=float(dl.get("min_score", 1.0)),
             target_mode=self._check_target_mode(dl.get("target_mode", "retrieval_tail")),
+            min_grade=None if dl.get("min_grade") is None else float(dl.get("min_grade")),
+            context_users_frac=float(dl.get("context_users_frac", 0.0) or 0.0),
+            context_min_rating=None if dl.get("context_min_rating") is None else float(dl.get("context_min_rating")),
         )
 
     @staticmethod
@@ -1153,10 +1164,12 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             return self._build_beir_query_as_user()
         if mode == "msmarco_query":
             return self._build_msmarco_retrieval_as_user()
+        if mode == "hybrid":
+            return self._build_hybrid_retrieval_as_user()
 
         raise ValueError(
             f"Unknown mode='{self.cfg.mode}'. Use 'movielens_genome', 'profile_query', 'tag_query', "
-            "'amazon_category', 'beir', or 'msmarco_query'."
+            "'amazon_category', 'beir', 'msmarco_query' or 'hybrid'."
         )
 
     def _build_movielens_query_as_user(self) -> pd.DataFrame:
@@ -1346,6 +1359,76 @@ class RetrievalAsUserDataLoader(RecsDataLoader):
             f"inside candidate pool: {len(rel)}"
         )
         return _attach_qrels_targets(df, judged, self.cfg.target_mode, "MSMARCO")
+
+    def _build_hybrid_retrieval_as_user(self) -> pd.DataFrame:
+        """Hybrid dataset: each query's BM25 top-k over the product catalogue is its history; the
+        relevant products (qrels) are the targets (``target_mode``). Optional training-only context
+        rows with real users' interactions on the same products (``context_users_frac``)."""
+        from search_recs.recs.dataloader.hybrid import (
+            hybrid_context_interactions, item_documents, load_relevant_qrels)
+
+        root = self.dataset_path
+        bm25_cfg = dict(self.cfg.bm25_config or {})
+        doc_col = bm25_cfg.get("doc_col", "document")
+        doc_id_col = bm25_cfg.get("doc_id_col", "document_id")
+
+        rel = load_relevant_qrels(root, self.cfg.min_grade)
+        queries = pd.read_parquet(root / "queries.parquet")
+        queries = queries.assign(query_id=queries["query_id"].astype(str))
+        queries = queries[queries["query_id"].isin(set(rel["query_id"]))]
+        if self.cfg.query_limit is not None:
+            ql = int(self.cfg.query_limit)
+            if 0 < ql < len(queries):
+                queries = queries.sample(n=ql, random_state=self.cfg.seed)
+
+        docs = item_documents(pd.read_parquet(root / "items.parquet"))
+        docs = docs[docs["document"].str.strip() != ""].rename(columns={"document_id": doc_id_col, "document": doc_col})
+        print(f"[RetrievalAsUser][HYBRID] catalogue={len(docs)} products | queries with relevant qrels: {len(queries)} "
+              f"(top_k={self.cfg.top_k})")
+
+        _ensure_nltk()
+        bm25 = _make_bm25_model(_bm25_cfg_for_indexing(bm25_cfg), dataset_path=root)
+        bm25.preprocess(train_data=docs)
+        bm25.fit()
+
+        rows: List[Dict[str, Any]] = []
+        for q_idx, (qid, qtext) in enumerate(zip(queries["query_id"], queries["query_text"].astype(str))):
+            for rank, (doc_id, score) in enumerate(_bm25_search_topk(bm25, qtext, top_k=int(self.cfg.top_k))):
+                try:
+                    s_val = float(score)
+                except Exception:
+                    continue
+                if s_val > 0:
+                    rows.append({"user": f"retrieval::{qid}", "item": str(doc_id), "time": int(rank), "score": s_val})
+            if int(self.cfg.progress_every) > 0 and (q_idx + 1) % int(self.cfg.progress_every) == 0:
+                print(f"[RetrievalAsUser][HYBRID] {q_idx+1}/{len(queries)} | rows={len(rows)}")
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            raise ValueError("[RetrievalAsUser][HYBRID] BM25 returned no hits.")
+        stats = df.groupby("user")["score"].agg(["min", "max"]).rename(columns={"min": "_min", "max": "_max"})
+        df = df.join(stats, on="user")
+        df["score"] = (df["score"] - df["_min"]) / (df["_max"] - df["_min"] + 1e-9)
+        df = df.drop(columns=["_min", "_max"])
+        df["label"] = df["score"].astype(float) if str(self.cfg.label_mode).lower() == "dense" else 1.0
+        df = df[["user", "item", "label", "time", "score"]]
+
+        per_user = df.groupby("user").size()
+        print(f"[RetrievalAsUser][HYBRID] interactions={len(df)} | query-users={df['user'].nunique()} | "
+              f"items={df['item'].nunique()} | items/user mean={per_user.mean():.1f}")
+
+        if self.cfg.target_mode != "retrieval_tail":
+            searched = {f"retrieval::{q}" for q in queries["query_id"]}
+            judged = pd.DataFrame({"user": "retrieval::" + rel["query_id"], "item": rel["asin"]})
+            df = _attach_qrels_targets(df, judged[judged["user"].isin(searched)], self.cfg.target_mode, "HYBRID")
+
+        if self.cfg.context_users_frac > 0:
+            context = hybrid_context_interactions(root, df["item"].unique(), self.cfg.context_users_frac,
+                                                  self.cfg.seed, self.cfg.context_min_rating)
+            if "role" not in df.columns:
+                df = df.assign(role=None)
+            df = pd.concat([df, context], ignore_index=True)
+        return df
 
     def _build_beir_query_as_user(self) -> pd.DataFrame:
 
