@@ -1,0 +1,18 @@
+{
+  "dataloader": {
+    "dataset_name": "movielens",
+    "mode": "hybrid",
+    "seed": 42,
+    "history_size": 5,
+    "gt_size": 20,
+    "history_size_max": 20,
+    "test_size": 0.2,
+    "val_size": 0.1
+  },
+  "features": {
+    "query_col": "search_query",
+    "doc_col": "document",
+    "cat_col": "category",
+    "id_col": "document_id"
+  }
+}

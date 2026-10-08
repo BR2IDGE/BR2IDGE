@@ -84,6 +84,30 @@ class MovieLensDataLoader:
             return [], []
         return query_items, gt_items
 
+    def _split_test_fixed_gt(self, test_ratings_user: pd.DataFrame, history_size: int, gt_size: int, history_size_max: int):
+        """
+        Fixed-GT variant used to vary context size while keeping ground truth stable:
+        GT is always the last `gt_size` items; history is the `history_size` most recent
+        items immediately before GT. Eligibility uses `history_size_max` (not the current
+        history_size) so the same set of users qualifies across all tested sizes.
+
+        Also returns `exclude_window`, the full `history_size_max`-item window before GT —
+        used (instead of `query_items`) to build the negative-sampling exclusion set, so
+        that candidates stay identical across different `history_size` values for the same
+        user (only the visible history differs, never the candidate pool).
+        """
+        items = test_ratings_user["movieId"].tolist()
+        if len(items) < history_size_max + gt_size:
+            return [], [], []
+
+        gt_items = items[-gt_size:]
+        pre_gt = items[:-gt_size]
+        exclude_window = pre_gt[-history_size_max:]
+        query_items = pre_gt[-history_size:]
+        if len(query_items) < history_size:
+            return [], [], []
+        return query_items, gt_items, exclude_window
+
     def _sample_negatives(self, rng: np.random.Generator, all_items: np.ndarray, excluded_set: set, n_neg: int = 200):
         """
         Samples negatives without replacement, respecting excluded items.
@@ -146,12 +170,19 @@ class MovieLensDataLoader:
         all_items: np.ndarray,
         n_neg: int = 200,
         seed: int = 48,
+        history_size: Optional[int] = None,
+        gt_size: int = 2,
+        history_size_max: Optional[int] = None,
     ) -> pd.DataFrame:
         """
         Creates a lightweight test dataset with 1 row per user:
           - search_query: ids (half of test) -> embedding average
           - ground_truth_ids: list of relevant items (half of test)
           - candidate_ids: ground_truth + 200 negatives
+
+        When `history_size` is given, uses the fixed-GT split instead (see
+        `_split_test_fixed_gt`), keeping ground truth and candidates stable while only
+        the amount of visible history varies.
         """
         rng = np.random.default_rng(seed)
 
@@ -161,13 +192,20 @@ class MovieLensDataLoader:
         rows = []
 
         for uid, g in test_ratings.groupby("userId", sort=False):
-            query_items, gt_items = self._split_test_into_query_and_gt(g)
+            if history_size is not None:
+                query_items, gt_items, exclude_window = self._split_test_fixed_gt(
+                    g, history_size=history_size, gt_size=gt_size,
+                    history_size_max=history_size_max or history_size,
+                )
+            else:
+                query_items, gt_items = self._split_test_into_query_and_gt(g)
+                exclude_window = query_items
             if not query_items or not gt_items:
                 continue
 
             seen = set()
             seen |= train_seen.get(uid, set())
-            seen |= set(query_items)
+            seen |= set(exclude_window)
             seen |= set(gt_items)
 
             negs = self._sample_negatives(rng, all_items, excluded_set=seen, n_neg=n_neg)
@@ -235,11 +273,18 @@ class MovieLensDataLoader:
 
         return self._split_and_sample(final_df[["search_query", "document", "document_id", "category"]])
 
-    def load_hybrid_data(self) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def load_hybrid_data(
+        self,
+        history_size: Optional[int] = None,
+        gt_size: int = 2,
+        history_size_max: Optional[int] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         print("Mode: Hybrid (Lightweight 60/40 + Candidates)")
 
-        rs = self._runtime_seed()
+        rs = self.cfg.random_state if self.cfg.random_state is not None else self._runtime_seed()
         print(f"[hybrid] Seed used (rs) = {rs}")
+        if history_size is not None:
+            print(f"[hybrid] Fixed-GT context sweep: history_size={history_size} gt_size={gt_size} history_size_max={history_size_max or history_size}")
 
         ratings = pd.read_csv(self.base_path / "ratings.csv")
         movies = pd.read_csv(self.base_path / "movies.csv")
@@ -293,6 +338,9 @@ class MovieLensDataLoader:
             all_items=all_items,
             n_neg=200,
             seed=rs,
+            history_size=history_size,
+            gt_size=gt_size,
+            history_size_max=history_size_max,
         )
 
         test_df = test_userwise.copy()
@@ -330,7 +378,11 @@ def load_movielens_dataset(cfg: BuildConfig, dataset_path: str = "./data/ml-25m"
     
     if mode == "hybrid":
         print(f"[DataLoader] Starting HYBRID mode (User History)")
-        return loader.load_hybrid_data()
+        return loader.load_hybrid_data(
+            history_size=kwargs.get("history_size"),
+            gt_size=int(kwargs.get("gt_size", 2)),
+            history_size_max=kwargs.get("history_size_max"),
+        )
     else:
         print(f"[DataLoader] Starting SEARCH mode (Semantic Tags)")
         return loader.load_search_data()

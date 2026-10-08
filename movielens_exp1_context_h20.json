@@ -1,0 +1,25 @@
+{
+  "experiment_name": "MovieLens_Exp1_Context_H20",
+  "task_type": "search",
+  "output_dir": "artifacts",
+  "hybrid": true,
+  "hybridStrategie": "centroid-vector",
+  "dataset": {
+    "name": "movielens",
+    "config_path": "config_files/datasets/movielens_hybrid_exp1_h20.json"
+  },
+  "model": [
+    { "name": "BiEncoderSearchModel", "config_path": "config_files/models/bi_encoder.json" },
+    { "name": "BM25Model", "config_path": "config_files/models/bm25_search.json" }
+  ],
+  "execution": {
+    "force": ["preprocess", "features", "eval", "index", "train"],
+    "skip": [],
+    "no_save": [],
+    "n_runs": 1
+  },
+  "evaluation": {
+    "top_ks": [5, 10, 20, 50],
+    "metrics": ["NDCG", "RECALL", "PRECISION"]
+  }
+}
