@@ -15,6 +15,13 @@ Groups:
             training -- LightFMTextModel (identity + item text) and LightFMContentModel (item text only) --
             on the base runs of the 3 datasets, BEIR cold_test_frac 0.5/1.0 and BEIR overlap_break 1.0
             (block-diagonal); analysis groups feat_base/feat_m3/feat_m2
+  rob       robustness of hypothesis 2: the base runs of the 3 datasets with other collaborative recommenders
+            -- ItemKNN and LightGCN with unseen items scored 0 (cold_start_score "popularity") or -inf
+            ("neg_inf") -- to check that the conclusions are not specific to LightFM and to its -inf for
+            unseen items; analysis group rob_base (per_user_analysis.py: robustness.csv)
+
+Storage: generated experiments save no model checkpoints (execution.no_save = ["train"]) and write
+eval_scores.parquet only for the groups whose analyses read it (EVAL_SCORES_GROUPS).
 
 Each variant gets its own dataset config (config_files/datasets/generated/<group>/) and its own
 experiment config (runs/<group>/) with a unique experiment_name, so matrices and results of
@@ -43,18 +50,28 @@ BASES = {
     ("hybrid", "RaU"): ("hybrid_lightfm_retrieval_as_user.json", "config_files/datasets/retrieval_as_user_hybrid.json"),
 }
 
-ALL_GROUPS = ["step1", "m1", "m2", "m3", "fullrank", "hybrid", "ctx", "feat"]
+ALL_GROUPS = ["step1", "m1", "m2", "m3", "fullrank", "hybrid", "ctx", "feat", "rob"]
 # criterion 4 controls: identity + item text (hybrid) and item text only (content-only)
 TEXT_MODELS = {"TEXT": "LightFMTextModel", "CONTENT": "LightFMContentModel"}
+# robustness: other collaborative recommenders, configs in config_files/models/h2/ -> (class, config, label)
+ROBUST_MODELS = {
+    "KNN": ("ItemKNNModel", "config_files/models/h2/itemknn.json", "ItemKNN"),
+    "GCNPOP": ("LightGCNModel", "config_files/models/h2/lightgcn_popularity.json", "LightGCN (popularity)"),
+    "GCNINF": ("LightGCNModel", "config_files/models/h2/lightgcn_neg_inf.json", "LightGCN (neg_inf)"),
+}
 SEEDS = (1, 2, 3)
+# candidate scores are only read by native_reference.py (TR) and by the tie-neutral criterion-4 table
+EVAL_SCORES_GROUPS = {"step1", "fullrank", "hybrid", "feat", "m2", "m3", "rob"}
 
 
 def _variants(group: str):
     """Yield (dataset, strategy, changes-to-dataloader, analysis-metadata).
 
     Optional metadata keys: "name" (fixed experiment name), "analysis_group" (group recorded for the
-    analysis when it differs from the generation group, e.g. the hybrid base runs are "base") and
-    "model" (recommender replacing the base experiment's LightFMModel)."""
+    analysis when it differs from the generation group, e.g. the hybrid base runs are "base"),
+    "model" (recommender replacing the base experiment's LightFMModel), "model_config" (its config file,
+    when not the one found by class name in config_files/models/) and "model_label" (name recorded for
+    the analysis, to tell apart two configs of the same class)."""
     if group == "step1":
         yield "beir", "RaU", {"target_mode": "all"}, {"param": "target_mode", "level": "all"}
         yield "msmarco", "RaU", {"target_mode": "new", "top_k": 100}, {"param": "top_k", "level": 100, "target_mode": "new"}
@@ -115,6 +132,16 @@ def _variants(group: str):
                 yield "beir", "QaU", {"overlap_break": 1.0, "seed": seed}, {
                     "model": model, "param": "overlap_break", "level": 1.0, "seed": seed,
                     "analysis_group": "feat_m2", "name": f"FEAT_{tag}_BEIR_QaU_overlap_break1p0_s{seed}"}
+    elif group == "rob":
+        for tag, (model, model_config, label) in ROBUST_MODELS.items():
+            base = {"model": model, "model_config": model_config, "model_label": label, "param": "base", "level": "-",
+                    "analysis_group": "rob_base"}
+            yield "beir", "QaU", {}, {**base, "name": f"ROB_{tag}_BEIR_QaU_base"}
+            yield "beir", "RaU", {"target_mode": "new"}, {**base, "name": f"ROB_{tag}_BEIR_RaU_base_new"}
+            yield "msmarco", "QaU", {}, {**base, "name": f"ROB_{tag}_MSMARCO_QaU_base"}
+            yield "msmarco", "RaU", {"target_mode": "new", "top_k": 100}, {**base, "name": f"ROB_{tag}_MSMARCO_RaU_base_top100_new"}
+            yield "hybrid", "QaU", {}, {**base, "name": f"ROB_{tag}_HYBRID_QaU_base"}
+            yield "hybrid", "RaU", {"target_mode": "new"}, {**base, "name": f"ROB_{tag}_HYBRID_RaU_base_new"}
     else:
         raise ValueError(f"Unknown group '{group}'. Groups: {ALL_GROUPS}")
 
@@ -141,6 +168,8 @@ def generate(group: str) -> list:
         name = meta.pop("name", None) or _name(group, dataset, strat, meta)
         analysis_group = meta.pop("analysis_group", group)
         model = meta.pop("model", None)
+        model_config = meta.pop("model_config", None)
+        model_label = meta.pop("model_label", None) or model
         exp_base, ds_base = BASES[(dataset, strat)]
 
         ds_cfg = json.loads((ROOT / ds_base).read_text(encoding="utf-8"))
@@ -153,11 +182,15 @@ def generate(group: str) -> list:
         exp["dataset"] = {"name": exp["dataset"]["name"], "config_path": str(ds_path.relative_to(ROOT))}
         exp["analysis"] = {"group": analysis_group, "dataset": dataset, "strategy": strat, **meta}
         if model:
-            exp["model"] = [{"name": model}]
-            exp["analysis"]["model"] = model
+            exp["model"] = [{"name": model, **({"config_path": model_config} if model_config else {})}]
+            exp["analysis"]["model"] = model_label
         if group == "fullrank":
             # every item of the adapted matrix is a candidate; every held-out positive is kept
             exp["evaluation"].update({"n_neg_samples": "all", "n_pos_samples": "all"})
+        # storage: no model checkpoints (every run retrains; nothing resumes from them) and candidate
+        # scores only where an analysis reads them. Neither changes any metric.
+        exp["execution"]["no_save"] = sorted(set(exp["execution"].get("no_save", [])) | {"train"})
+        exp["evaluation"]["save_eval_scores"] = group in EVAL_SCORES_GROUPS
         exp_path = run_dir / f"{name.lower()}.json"
         exp_path.write_text(json.dumps(exp, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         written.append(exp_path)

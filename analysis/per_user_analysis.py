@@ -13,6 +13,8 @@ written by framework.py (runs/<run_id>/per_user_metrics.csv) and produces (analy
   structure_vs_performance.csv  hypothesis 2: each structural property vs NDCG@10 (Spearman, R2, R2 beyond coverage)
   feature_control.csv criterion 4: same conditions with pure CF (LightFMModel) vs text-aware LightFM
                       (LightFMTextModel: identity + text; LightFMContentModel: text only), tie-neutral metrics
+  robustness.csv      base runs with other collaborative recommenders (ItemKNN, LightGCN with unseen items at
+                      0 or -inf) next to LightFM, tie-neutral metrics and the expected value of a random ranking
   fig_*.png           cold-positives vs NDCG@10, manipulation curves, NDCG@10 by neighbours
 
 Usage:
@@ -55,13 +57,15 @@ STRUCT_MEASURES = {
     "test_pos_cold_frac": "% positivos de teste frios (cobertura)",
 }
 LOG_MEASURES = {"pseudo_users", "user_deg_mean", "neighbors_per_user", "cooc_per_item"}
+# groups that rerun base conditions with another recommender (criterion 4 / robustness)
+OTHER_MODEL_GROUPS = ("feat_", "rob_")
 
 
 def _comparable(df: pd.DataFrame) -> pd.DataFrame:
     """Runs on the sampled protocol that measure transfer: no 'all' target mode (memorisation of the
     own history) and no fullrank runs (different candidate protocol)."""
     keep = ((df["target_mode"].fillna("").astype(str) != "all") & (df["group"] != "fullrank")
-            & ~df["group"].astype(str).str.startswith("feat_"))  # other recommender: see feature_control()
+            & ~df["group"].astype(str).str.startswith(OTHER_MODEL_GROUPS))  # see feature_control() / robustness()
     return df[keep]
 
 
@@ -286,7 +290,9 @@ def structure_vs_performance(run_level: pd.DataFrame) -> pd.DataFrame:
 
 def _condition(row) -> str:
     """Comparable experimental condition, shared by LightFM and its text-feature variant."""
-    group = str(row["group"]).replace("feat_", "")
+    group = str(row["group"])
+    for prefix in OTHER_MODEL_GROUPS:
+        group = group.removeprefix(prefix)
     if group == "base" or (group == "step1" and str(row.get("target_mode")) == "new"):
         top_k = row.get("top_k")
         return "base" + (f" (top_k={int(top_k)})" if row["dataset"] == "msmarco" and pd.notna(top_k) and int(top_k) == 100 else "")
@@ -298,10 +304,19 @@ def _condition(row) -> str:
 CF_MODEL = "LightFMModel"
 
 
+def _random_expectation(n_pos: int, n_cand: int) -> tuple[float, float]:
+    """Expected NDCG@10 and RECALL@50 of a uniformly random ranking of n_cand candidates with n_pos
+    positives (binary gains): every position holds a positive with probability n_pos / n_cand."""
+    disc = 1.0 / np.log2(np.arange(2, 12))
+    dcg = n_pos / n_cand * disc[:min(10, n_cand)].sum()
+    return dcg / disc[:min(n_pos, 10)].sum(), min(50, n_cand) / n_cand
+
+
 def neutral_run_metrics(experiments: pd.DataFrame, runs: pd.DataFrame) -> pd.DataFrame:
     """NDCG@10 / RECALL@50 per run recomputed from eval_scores.parquet with a fixed random order inside
     ties. The framework lists positives first and numpy's tie order differs across machines, which
-    matters when a model ties many candidates (pure CF gives -inf to every unseen item)."""
+    matters when a model ties many candidates (pure CF gives -inf to every unseen item). Also returns
+    the expected value of a random ranking of the same candidates (NDCG@10_random, RECALL@50_random)."""
     from search_recs.metric import NdcgAtK, RecallAtK
 
     ndcg, recall = NdcgAtK(), RecallAtK()
@@ -317,7 +332,7 @@ def neutral_run_metrics(experiments: pd.DataFrame, runs: pd.DataFrame) -> pd.Dat
                     continue
                 scores = pd.read_parquet(path)
                 rng = np.random.default_rng(0)
-                nd, rc = [], []
+                nd, rc, nd_rand, rc_rand = [], [], [], []
                 for _, g in scores.groupby("user", sort=False):
                     g = g.iloc[rng.permutation(len(g))]
                     y = (pd.to_numeric(g["label"], errors="coerce").fillna(0) > 0).astype(float).to_numpy()
@@ -327,10 +342,16 @@ def neutral_run_metrics(experiments: pd.DataFrame, runs: pd.DataFrame) -> pd.Dat
                     pred = np.where(np.isfinite(pred), pred, -1e30)
                     nd.append(ndcg.evaluate_metric(y_pred=list(pred), y_true=list(y), topk=10))
                     rc.append(recall.evaluate_metric(y_pred=list(pred), y_true=list(y), topk=50))
+                    exp_nd, exp_rc = _random_expectation(int(y.sum()), len(y))
+                    nd_rand.append(exp_nd)
+                    rc_rand.append(exp_rc)
                 rows.append({"experiment": exp.experiment, "run_id": run_id,
                              "NDCG@10_neutral": float(np.mean(nd)) if nd else np.nan,
-                             "RECALL@50_neutral": float(np.mean(rc)) if rc else np.nan})
-    return pd.DataFrame(rows, columns=["experiment", "run_id", "NDCG@10_neutral", "RECALL@50_neutral"])
+                             "RECALL@50_neutral": float(np.mean(rc)) if rc else np.nan,
+                             "NDCG@10_random": float(np.mean(nd_rand)) if nd_rand else np.nan,
+                             "RECALL@50_random": float(np.mean(rc_rand)) if rc_rand else np.nan})
+    return pd.DataFrame(rows, columns=["experiment", "run_id", "NDCG@10_neutral", "RECALL@50_neutral",
+                                       "NDCG@10_random", "RECALL@50_random"])
 
 
 def feature_control(run_level: pd.DataFrame, experiments: pd.DataFrame):
@@ -365,6 +386,31 @@ def feature_control(run_level: pd.DataFrame, experiments: pd.DataFrame):
 
 
 # ----------------------------------------------------------------------------- figures
+def robustness(run_level: pd.DataFrame, experiments: pd.DataFrame) -> pd.DataFrame:
+    """Base conditions rerun with other collaborative recommenders (group rob_base: ItemKNN, LightGCN with
+    unseen items at 0 or -inf) next to LightFM in the same conditions. Tie-neutral metrics, plus the
+    expected value of a random ranking of the same candidates: a recommender with no signal for the
+    test items lands on it, not on 0, unless it sends unseen items to the bottom."""
+    rob = run_level["group"].astype(str).str.startswith("rob_")
+    if not rob.any():
+        return pd.DataFrame()
+    cf = (run_level["group"].isin(["base", "step1"]) & (run_level["model"] == CF_MODEL)
+          & (run_level["target_mode"].fillna("").astype(str) != "all"))
+    long = run_level[rob | cf].copy()
+    long["condition"] = long.apply(_condition, axis=1)
+    long = long[long["condition"] != ""]
+    keys = set(zip(*[long.loc[long["group"].astype(str).str.startswith("rob_"), c] for c in ("dataset", "strategy", "condition")]))
+    long = long[[k in keys for k in zip(long["dataset"], long["strategy"], long["condition"])]]
+    long = long.merge(neutral_run_metrics(experiments, long[["experiment", "run_id"]]), on=["experiment", "run_id"], how="left")
+    agg = long.groupby(["dataset", "strategy", "condition", "model"]).agg(
+        n_runs=("NDCG@10_neutral", "size"), cold=("test_pos_cold_frac", "mean"),
+        ndcg10=("NDCG@10_neutral", "mean"), ndcg10_std=("NDCG@10_neutral", "std"),
+        ndcg10_random=("NDCG@10_random", "mean"), recall50=("RECALL@50_neutral", "mean"),
+        recall50_random=("RECALL@50_random", "mean")).reset_index()
+    agg["ndcg10_over_random"] = agg["ndcg10"] / agg["ndcg10_random"]
+    return agg
+
+
 def fig_feature_control(long: pd.DataFrame, path: Path):
     """BEIR: tie-neutral NDCG@10 vs cold test positives, pure CF vs the two text-aware recommenders."""
     data = long[long["dataset"] == "beir"]
@@ -494,6 +540,10 @@ def main():
         fc_long.to_csv(out / "feature_control_runs.csv", index=False)
         fig_feature_control(fc_long, out / "fig_feature_control.png")
 
+    rob = robustness(run_level, experiments)
+    if not rob.empty:
+        rob.to_csv(out / "robustness.csv", index=False)
+
     fig_cold(run_level, out / "fig_cold_vs_ndcg.png")
     fig_neighbors(users, out / "fig_ndcg_by_neighbors.png")
     if not curve_df.empty:
@@ -528,6 +578,10 @@ def main():
         cols = ["dataset", "strategy", "condition", f"cold_{CF_MODEL}"] + [
             c for m in (CF_MODEL, "LightFMTextModel", "LightFMContentModel") for c in (f"ndcg10_{m}", f"recall50_{m}") if c in fc]
         print(fc[[c for c in cols if c in fc]].round(4).to_string(index=False))
+    if not rob.empty:
+        print("\n=== robustness: other collaborative recommenders (tie-neutral; random = expected value of a random ranking) ===")
+        print(rob[["dataset", "strategy", "condition", "model", "n_runs", "cold", "ndcg10", "ndcg10_random",
+                   "ndcg10_over_random", "recall50", "recall50_random"]].round(4).to_string(index=False))
     if not med.empty:
         print("\n=== does the cold fraction explain M1/M2/ctx? (residual vs line fitted on base + M3) ===")
         print(med[["dataset", "strategy", "group", "level", "n_runs", "mean_cold", "mean_ndcg", "mean_residual",

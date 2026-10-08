@@ -1047,15 +1047,18 @@ def evaluate_recs_userwise(model, train_df, test_df, eval_conf: dict, seed: int,
     if dump_dir is not None:
         dump_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(per_user_rows).to_csv(dump_dir / "per_user_metrics.csv", index=False)
-        scores_out = eval_df[["user", "item", "label", "_score"]].copy()
-        scores_out["user"] = scores_out["user"].astype(str)
-        scores_out["item"] = scores_out["item"].astype(str)
-        scores_out["label"] = pd.to_numeric(scores_out["label"], errors="coerce")
-        try:
-            scores_out.to_parquet(dump_dir / "eval_scores.parquet", index=False)
-        except Exception as e:
-            print(f"[eval-recs] Warning: could not save eval_scores.parquet: {e}")
-        print(f"[eval-recs] Per-user metrics and candidate scores saved to {dump_dir}")
+        # candidate scores are only needed by analyses that re-rank the same candidates
+        # (native reference, tie-neutral metrics); they can be large, so they are optional
+        if eval_conf.get("save_eval_scores", True):
+            scores_out = eval_df[["user", "item", "label", "_score"]].copy()
+            scores_out["user"] = scores_out["user"].astype(str)
+            scores_out["item"] = scores_out["item"].astype(str)
+            scores_out["label"] = pd.to_numeric(scores_out["label"], errors="coerce")
+            try:
+                scores_out.to_parquet(dump_dir / "eval_scores.parquet", index=False)
+            except Exception as e:
+                print(f"[eval-recs] Warning: could not save eval_scores.parquet: {e}")
+        print(f"[eval-recs] Per-user metrics saved to {dump_dir}")
 
     results = {}
     for k in top_ks:
@@ -1561,10 +1564,21 @@ def make_test_items_cold(train_df: pd.DataFrame, test_df: pd.DataFrame, frac: fl
 
 
 def save_split_matrices(out_dir: Path, run_idx: int, fold: int, run_id: str, train_df: pd.DataFrame,
-                        test_df: pd.DataFrame, extra: dict | None = None):
-    """Persist the adapted user-item matrices of a run for offline structural analysis."""
+                        test_df: pd.DataFrame, extra: dict | None = None, context: pd.DataFrame | None = None):
+    """Persist the adapted user-item matrices of a run for offline structural analysis.
+
+    ``context`` (training-only rows shared by every run) is written once to ``context.parquet``;
+    the run's train matrix is then ``<stem>_train.parquet`` + ``context.parquet``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"run{run_idx:02d}_fold{fold:02d}"
+    if context is not None:
+        ctx_path = out_dir / "context.parquet"
+        if not ctx_path.exists():
+            c = context[[col for col in ("user", "item", "label") if col in context.columns]].copy()
+            c["user"] = c["user"].astype(str)
+            c["item"] = c["item"].astype(str)
+            c.to_parquet(ctx_path, index=False)
+        extra = {**(extra or {}), "context_file": "context.parquet"}
     for name, df in (("train", train_df), ("test", test_df)):
         out = df.copy()
         out["user"] = out["user"].astype(str)
@@ -1763,6 +1777,7 @@ def main(args):
             print(f"[main] Split complete. Train={len(train_data)}, Test={len(test_data)}")
 
             split_info = {}
+            train_core = train_data
             if context_data is not None:
                 ctx = context_data.rename(columns={"time": "timestamp"}) if "timestamp" in train_data.columns else context_data
                 train_data = pd.concat([train_data, ctx], ignore_index=True)
@@ -1775,8 +1790,13 @@ def main(args):
                 split_info.update(cold_info)
 
             if "preprocess" not in no_save:
-                save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data, test_data,
-                                    extra=split_info)
+                if context_data is not None and cold_frac <= 0:
+                    # context rows are the same in every run: one copy per experiment (matrices/context.parquet)
+                    save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_core,
+                                        test_data, extra=split_info, context=context_data)
+                else:
+                    save_split_matrices(exp_context_dir / "matrices", run_idx, current_fold, run_id, train_data,
+                                        test_data, extra=split_info)
 
         for i, model_entry in enumerate(raw_models):
             tf.compat.v1.reset_default_graph()

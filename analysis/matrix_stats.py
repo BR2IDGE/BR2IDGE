@@ -51,7 +51,8 @@ def discover(artifacts: Path) -> pd.DataFrame:
             "seed": meta.get("seed", dl.get("seed")),
             "target_mode": dl.get("target_mode"),
             "top_k": dl.get("top_k"),
-            "model": cfg_path.parents[1].name,
+            # the run dir is named after the class; "analysis.model" tells apart two configs of one class
+            "model": meta.get("model", cfg_path.parents[1].name),
             "matrices": str(matrices),
             "hash_dirs": [],
         })
@@ -79,10 +80,13 @@ def analyse_run(train: pd.DataFrame, test: pd.DataFrame):
     # per-user statistics describe the pseudo-users (queries); injected real users only add edges
     pseudo = ~pd.Index(users.astype(str)).str.startswith(CONTEXT_PREFIX)
 
-    UU = (X @ X.T).tocsr()
-    UU.setdiag(0)
-    UU.eliminate_zeros()
-    neighbours = np.diff(UU.indptr)
+    # neighbours = other users (queries or injected real users) sharing at least one item. Only the
+    # pseudo-users' rows are computed: the full user x user product explodes when many real users are
+    # injected (ctx) and their own neighbour counts are never used. Every row contains its own user
+    # (degree >= 1), hence the -1.
+    pseudo_idx = np.flatnonzero(pseudo)
+    neighbours = np.zeros(n_users, dtype=np.int64)
+    neighbours[pseudo_idx] = np.diff((X[pseudo_idx] @ X.T).tocsr().indptr) - 1
 
     II = (X.T @ X).tocsr()
     II.setdiag(0)
@@ -162,6 +166,9 @@ def main():
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             stem = meta_path.name[: -len("_meta.json")]
             train = pd.read_parquet(meta_path.with_name(f"{stem}_train.parquet"), columns=["user", "item"])
+            if meta.get("context_file"):  # training-only rows shared by every run, stored once
+                context = pd.read_parquet(meta_path.with_name(meta["context_file"]), columns=["user", "item"])
+                train = pd.concat([train, context], ignore_index=True)
             test = pd.read_parquet(meta_path.with_name(f"{stem}_test.parquet"), columns=["user", "item"])
             structure, per_user = analyse_run(train, test)
 
